@@ -1,5 +1,6 @@
 import logging, logging.handlers
 import time, pathlib, importlib, json
+from datetime import datetime
 
 registeryml = "modbus_sungrow.yaml"
 configfilename = "options.json"
@@ -65,17 +66,17 @@ if __name__ == "__main__":
     logging.info(f"Entering main loop. Starting data collection and publishing...")
     while True:
         try:
+            export.publish(export.config['topic'] + "/status", "online")
             for value, regs in inverter.address_lookup.items():
                 for reg in regs:
-                    if inverter.load_registers(reg):
+                    if inverter.load_registers(reg) and datetime.now() - reg.get_value('scan_interval') > reg.get_value('last_scrape', 0):
                         logging.debug(f"Loaded {len(reg)} registers for range{reg['name']}")
+                        reg.set_value('last_scrape', datetime.now())
+                        export.publish(export.config['topic']+"/"+reg.get_value('unique_id'), inverter.get_register_values(reg.get_value('unique_id')))
+                        logging.debug(f"Published data for {reg['name']} to MQTT topic {export.config['topic']}/{reg.get_value('unique_id')}")
                     else:
                         logging.warning(f"Failed to load registers for range {reg['name']}")
-
-            export.publish(export.config['topic'], json.dumps(inverter.last_scrape))
-            topic = export.config['topic'] + "/status"
-            export.publish(topic, "online")
-            time.sleep(5)
         except Exception as e:
             logging.error(f"Error in main loop: {e}")
+            export.publish(export.config['topic'] + "/status", "offline")
             time.sleep(5)

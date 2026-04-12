@@ -23,12 +23,16 @@ class Client:
         logging.debug('Inverter Config Loaded')
 
     def configure_inverter(self):
+        blacklist = {}
         if self.client_config['winet_connection']:
             logging.info("WiNET-S connection selected, cleanup address lookup to use with WiNET-S.")
-            with open("/app/config/blacklist", "r") as f:
-                b = f.read().replace(' ', '').replace('\n', ',').split(',')
-            blacklist = {b[i]: b[i + 1] for i in range(0, len(b), 2)}
-        
+            try:
+                with open("/app/config/blacklist", "r") as f:
+                    b = f.read().replace(' ', '').replace('\n', ',').split(',')
+                blacklist = {b[i]: b[i + 1] for i in range(0, len(b), 2)}
+            except FileNotFoundError:
+                logging.warning("Blacklist file not found.")
+
         # Build address lookup table
         for category in self.registers.values():
             if isinstance(category, list):
@@ -36,7 +40,7 @@ class Client:
                     addr = reg.get('address')
                     typ = reg.get('input_type')
                     if addr is not None and typ is not None:
-                        if self.client_config['winet_connection']:
+                        if self.client_config['winet_connection'] and blacklist:
                             if str(addr) in blacklist and blacklist[str(addr)] == typ:
                                 continue
                         self.address_lookup.setdefault((addr, typ), []).append(reg)
@@ -73,6 +77,10 @@ class Client:
         Loads a block of registers starting from 'address' with length 'count'.
         Parses the values based on 'address_lookup' and stores them in 'last_scrape'.
         """
+        if self.client is None:
+            logging.error("Modbus client is not connected")
+            return False
+
         register_type = register.get('input_type')
         start = register.get('address')
         count = register.get('count',100)

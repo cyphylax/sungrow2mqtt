@@ -43,6 +43,14 @@ class Client:
         return True
 
     def connect(self):
+        if self.mqtt_client is None:
+            logging.error("MQTT client is not configured")
+            return False
+        
+        if not self.config.get("host"):
+            logging.error("MQTT: Host config is required")
+            return False
+
         try:
             logging.info(f"Connecting to MQTT broker at {self.config['host']}:{self.config['port']}...")
             self.mqtt_client.connect(self.config["host"], port=self.config["port"], keepalive=60)
@@ -120,7 +128,7 @@ class Client:
         logging.info("Home Assistant discovery publication completed.")
 
     def publish(self, topic, payload, qos=2, retain=True):
-        if not self.connected:
+        if not self.connected or not self.mqtt_client:
             logging.warning("MQTT client not connected, cannot publish")
             return
         try:
@@ -159,7 +167,7 @@ class Client:
         logging.debug(f"Message {mid} published successfully")
 
     def check_connection(self):
-        if self.connected:
+        if self.connected and self.mqtt_client:
             try:
                 # Publish ein Test-Topic, um Verbindung zu prüfen
                 self.mqtt_client.publish("sungrow/connection_test", payload="test", qos=1, retain=False)
