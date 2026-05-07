@@ -75,10 +75,14 @@ class Registers:
             self.registerfile = {}
             return
 
+        if content_to_load is None:
+            self.registerfile = {}
+            return
+
         try:
             self.registerfile = yaml.load(content_to_load, Loader=yaml.FullLoader)
         except yaml.YAMLError as e:
-            logging.error(f"Failed to parse YAML content: {e}")
+            logging.error(f"Failed to parse YAML content: {e}", exc_info=True)
             self.registerfile = {}
 
     def _save_local_file(self, content):
@@ -87,7 +91,7 @@ class Registers:
                 f.write(content)
             logging.info(f"Updated local register file: {self.registerfile_path}")
         except Exception as e:
-            logging.error(f"Failed to save local register file: {e}")
+            logging.error(f"Failed to save local register file: {e}", exc_info=True)
 
     def configure(self):
         mappings = [
