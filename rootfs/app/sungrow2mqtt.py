@@ -46,9 +46,12 @@ def logging_setup(config):
 
 def poll_and_publish(inverter, export):
     '''Poll Modbus blocks and publish the latest register snapshot.'''
+    # First, handle any pending write commands from MQTT
+    export.handle_writes(inverter)
+    export.status = 'online'
     inverter.poll_blocks()
     try:
-        export.mqtt_client.publish(export.config['topic'] + '/status', 'online')
+        export.mqtt_client.publish(export.config['topic'], 'online', retain=True)
     except Exception as publish_err:
         logging.warning(f'MQTT: Failed to publish status online: {publish_err}')
     export.publish(inverter)
@@ -57,9 +60,11 @@ def handle_error(export, error):
     '''Handle exceptions in main loop.'''
     logging.error(f'Error in main loop: {error}', exc_info=True)
     try:
-        export.mqtt_client.publish(export.config['topic'] + '/status', 'offline')
+        export.mqtt_client.publish(export.config['topic'], 'offline', retain=True)
     except Exception as publish_err:
         logging.warning(f'MQTT: Failed to publish status offline: {publish_err}')
+        export.status = 'offline'
+        export.publish(inverter) # Push offline status to all topics
     time.sleep(5)
 
 def main_loop(inverter, export):
@@ -74,7 +79,7 @@ def main_loop(inverter, export):
 ### Main Program Execution ###
 if __name__ == '__main__':
     sungrow = importlib.import_module('modules.sungrow')
-    modbus = importlib.import_module('modules.config_parser')
+    modbus = importlib.import_module('modules.register')
     mqtt = importlib.import_module('modules.mqtt')
 
     register_path = pathlib.Path(__file__).parent / 'config' / registeryml
@@ -102,7 +107,6 @@ if __name__ == '__main__':
     register= modbus.Registers(register_path, inverter, export)
     register.configure()
     inverter.configure_inverter()
-    
     if not export.configure(config, inverter):
         logging.error('MQTT configuration failed')
         exit(1)

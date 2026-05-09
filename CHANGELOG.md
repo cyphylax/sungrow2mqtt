@@ -3,33 +3,36 @@
 # Sungrow2MQTT Home Assistant Add-on
 
 ## Changelog
-### [1.0.5] - 2026-05-09
-- Refactor logging implementation: unify logger usage across modules and enhance log formatting
+### [1.1.0] - 2026-05-xx
+#### Added
+- **Write Support**: Preliminary support for writing to Modbus registers via MQTT.
+- Added option for connecting to WiNET-S/WiNET-S2 communication modules (using read-only registers).
 
-### [1.0.4] - 2026-05-08
 #### Changed
-- Refactored main application loop into modular functions (`poll_and_publish`, `handle_error`, `main_loop`) for better maintainability
-- Implemented block-based Modbus register reading to group contiguous registers and reduce network roundtrips
-- Enhanced blacklist-aware address lookup for register filtering
+- **Performance**: Implemented block-based Modbus polling to reduce network roundtrips and improve stability.
+- **Refactoring**: Modularized the main loop and unified the logging system across all modules.
+- **Discovery**: Optimized MQTT auto-discovery payload generation for Home Assistant.
+- **Compatibility**: Updated internal register mappings to the latest version.
 
 #### Fixed
-- Corrected MQTT publish method calls to use correct API (removed invalid topic/payload arguments)
-- Fixed 32-bit register processing by ensuring read blocks include sufficient registers and proper index incrementing in processing loop
-- Removed duplicated startup code in main application file
-- Improved logging setup and error handling throughout the application
-- Fixed various syntax errors and compilation issues
+- Fixed Home Assistant Discovery issues (typos in templates and incorrect availability topics).
+- Fixed command topic handling for writable entities.
+- Added `retain=True` for status and sensor messages to ensure data availability after restarts.
+- Corrected 32-bit register processing and fixed various syntax issues.
 
 ### [1.0.3] - 2026-04-12
-- Update documentation
+#### Changed
+- Updated project documentation and README.
 
 ### [1.0.2] - 2026-04-04
-- Fix some bugs
+#### Fixed
+- General bug fixes and stability improvements.
   
 ### [1.0.1] - 2026-04-04
-- The configuration and documentation have been aligned, and any inconsistencies have been resolved.
-- An option for connecting to WiNET-S/WiNET-S2 has been added to the inverter configuration. This option uses read-only registers and does not generate a log entry if an incorrect inverter address is selected. This means the add-on can also be used with the WiNET-S/WiNET-S2 communication module.
-
+#### Changed
+- Aligned configuration and documentation to resolve inconsistencies.
 ### [1.0.0] - 2026-04-04
-- Initial release
+#### Added
+- Initial release.
 
 ---

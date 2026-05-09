@@ -1,4 +1,6 @@
 import logging
+import re
+import ast
 from datetime import datetime, timedelta
 from modules import register
 from pymodbus.client.sync import ModbusTcpClient
@@ -125,7 +127,7 @@ class Client:
             last = reg.get('last_scrape')
             if not isinstance(last, datetime):
                 return True
-            if now - last > timedelta(seconds=scan_interval):
+            if now - last > timedelta(microseconds=scan_interval):
                 return True
         return False
 
@@ -188,16 +190,47 @@ class Client:
         self._process_register_block(start, register_type, rr.registers)
         return True
 
+    def _extract_map_from_jinja(self, jinja_str):
+        """
+        Extrahiert die Dictionary-Struktur aus einem Jinja2 'set map = {...}' Block.
+        """
+        if not isinstance(jinja_str, str):
+            return {}
+        
+        # Sucht nach dem Inhalt zwischen '{% set map = ' und ' %}'
+        match = re.search(r'set\s+map\s*=\s*(\{.*?\})\s*%\}', jinja_str, re.DOTALL)
+        if match:
+            map_str = match.group(1)
+            try:
+                # ast.literal_eval kann sicher Python-Dicts mit Hex-Keys (0x...) parsen
+                return ast.literal_eval(map_str)
+            except Exception as e:
+                log.error(f"Fehler beim Parsen der Modell-Map aus Jinja: {e}")
+        return {}
+
     def _read_register_value(self):
-        targets = {"serial_number": "inverter_serial","model":"dev_code"}
+        targets = {"serial_number": "inverter_serial", "model": "dev_code"}
+        
+        # Get model mapping from register file if available
+        model_mapping = {}
+        for reg_dict in self.registers.get("sensor", []):
+            if reg_dict.get("unique_id") == "device_type": # sg_device_type wird zu device_type
+                model_mapping = self._extract_map_from_jinja(reg_dict.get('state'))
+                break
+
         # Find the register definition for this unique_id
         for key, value in targets.items():
             for range, regs in self.address_lookup.items():
                 for reg in regs:
                     if reg.get('unique_id') == value:
                         if self.load_registers(reg):
-                            if self.last_scrape.get(value):
-                                setattr(self, key, self.last_scrape[value])
+                            raw_val = self.last_scrape.get(value)
+                            if raw_val is not None:
+                                if key == 'model':
+                                    model_name = model_mapping.get(raw_val, f"Unknown ({hex(raw_val)})")
+                                    setattr(self, key, model_name)
+                                else:
+                                    setattr(self, key, raw_val)
         return None
 
     def load_registers(self, register: dict) -> bool:
@@ -342,7 +375,7 @@ class Client:
                             parsed_value = reg_value
 
                         # 2. Scaling and Precision (for numeric types)
-                        if isinstance(parsed_value, (int, float)) and datatype != "UTF-8":
+                        if isinstance(parsed_value, (int, float)) and datatype != "string":
                             if scale != 1:
                                 parsed_value = parsed_value * scale
                             if offset != 0:
@@ -358,9 +391,57 @@ class Client:
                     except Exception as e:
                         log.warning(f"Error processing register {reg.get('unique_id', addr)}: {e}")
 
-                num += increment
+                num += increment # type: ignore
         except Exception as e:
             log.error(f"Error in _process_register_block: {e}", exc_info=True)
+
+    def write_register(self, reg, value):
+        """
+        Writes a value to a Modbus register.
+        Supports scaling and 32-bit registers.
+        """
+        if not self.client:
+            log.error("Modbus: Client not initialized")
+            return False
+
+        addr = reg.get('address')
+        if addr is None:
+            return False
+
+        try:
+            # Ensure connection is active
+            self.client.connect()
+
+            # Handle numeric conversion and scaling
+            val = float(value)
+            scale = reg.get('scale', 1)
+            if scale != 1:
+                val = val / scale
+            
+            val = int(round(val))
+            
+            datatype = reg.get('data_type', 'uint16')
+            log.info(f"Modbus: Writing {val} to {datatype} register at address {addr}")
+
+            if datatype in ("uint32", "int32"):
+                # 32-bit registers consist of two 16-bit registers.
+                # Following the logic in _process_register_block (Little Endian Word Order)
+                low_word = val & 0xFFFF
+                high_word = (val >> 16) & 0xFFFF
+                result = self.client.write_registers(addr, [low_word, high_word], unit=self.client_config['slave'])
+            else:
+                # Standard 16-bit register
+                result = self.client.write_register(addr, val, unit=self.client_config['slave'])
+
+            if result.isError():
+                log.error(f"Modbus: Write failed for address {addr}: {result}")
+                return False
+            
+            log.info(f"Modbus: Write successful for address {addr}")
+            return True
+        except Exception as e:
+            log.error(f"Modbus: Exception during write to {addr}: {e}")
+            return False
 
     def close(self):
         try:

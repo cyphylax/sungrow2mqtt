@@ -1,236 +1,179 @@
+import yaml
 import logging
-
+import requests
 log = logging.getLogger(__name__)
-
-class Register:
-    def __init__(self, name: str, topic: str, register: int, length: int, mode: str, unitid: int = None):
-        self.name = name
-        self.topic = topic
-        self.start = register
-        self.length = length
-        self.mode = [*mode]
-        self.unitid = unitid
-
-    def get_value(self, src):
-        log.debug("Method not implemented.")
-        return False
-
-    def set_value(self, params):
-        log.debug("Method not implemented.")
-        return False
-
-    def can_read(self):
-        return 'r' in self.mode
-
-    def can_write(self):
-        return 'w' in self.mode
+registeryml_remote = "https://raw.githubusercontent.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant/refs/heads/main/modbus_sungrow.yaml"
 
 
-class CoilsRegister(Register):
+class SungrowRegister:
+    """Base class for all entries from modbus_sungrow.yaml"""
+    def __init__(self, config_dict):
+        self.name = config_dict.get('name')
+        self.unique_id = self._clean_unique_id(config_dict.get('unique_id', ''))
+        self.sensor_type = config_dict.get('sensor_type') # sensor, binary_sensor, switch, etc.
+        self.unit_of_measurement = config_dict.get('unit_of_measurement')
+        self.device_class = config_dict.get('device_class')
+        self.state_class = config_dict.get('state_class')
+        self.icon = config_dict.get('icon')
+        
+        # Keep raw data for specific logic
+        self.raw_config = config_dict
 
-    def __init__(self, name: str, topic: str, register: int, coils: list,
-                length: int = 1, mode: str = "rw", unitid: int = None, **kvargs):
-        super().__init__(name, topic, register, length, mode, unitid=unitid)
-        self.length = length
-        self.coils = []
-        bit = 0
-        for c in coils:
-            bit += 1
-            if c.get('bit', None) is not None:
-                bit = c.get('bit', 1)
-            if bit > self.length:
-                self.length = bit
-            c["bit"] = bit
-            if 'on_value' not in c:
-                c["on_value"] = "ON"
-            if 'off_value' not in c:
-                c["off_value"] = "OFF"
-            if 'mode' not in c:
-                c["mode"] = self.mode
-            else:
-                c["mode"] = [*c["mode"]]
-            if 'name' not in c:
-                c["name"] = f"coil_{bit}"
-            self.coils.append(c)
+    def _clean_unique_id(self, uid):
+        """Removes prefixes like sg_ or uid_ similar to ConfigParser"""
+        parts = uid.split("_")
+        while parts and parts[0] in ["sg", "uid"]:
+            parts.pop(0)
+        return "_".join(parts)
 
-    def get_value(self, src):
-        unitid = self.unitid
-        if unitid is None:
-            unitid = src.unitid
+    def __repr__(self):
+        return f"<{self.__class__.__name__}(name={self.name}, uid={self.unique_id})>"
 
-        rr = src.client.read_coils(self.start, self.length, slave=unitid)
-        if not rr:
-            raise ModbusException("Received empty modbus respone.")
-        if rr.isError():
-            raise ModbusException(f"Received Modbus library error({rr}).")
-        if isinstance(rr, ExceptionResponse):
-            raise ModbusException(f"Received Modbus library exception ({rr}).")
-
-        val = {}
-        for c in self.coils:
-            name = re.sub(r'/\s\s+/g', '_', str(c["name"]).strip())
-            if rr.bits[c["bit"] - 1] == 0:
-                val[name] = c["off_value"]
-            else:
-                val[name] = c["on_value"]
-        return val
-
-    def set_value(self, src, params):
-        unitid = self.unitid
-        if unitid is None:
-            unitid = src.unitid
-
-        value = params.get("value", None)
-        if value is None:
-            # Can't set unknown state
-            return False
-
-        cname = params.get("coil", None)
-        if cname is None:
-            # Can't set unknown state
-            return False
-
-        # Find the coil to set
-        coil = None
-        for c in self.coils:
-            name = re.sub(r'/\s\s+/g', '_', str(c["name"]).strip())
-            if cname == name or cname == str(c["name"]):
-                if 'w' not in c["mode"]:
-                    # Can't write to this coil
-                    log.info("Could not write becaue coil mode is set to read-only.")
-                    return False
-                coil = c
-                break
-
-        if coil is None:
-            return False
-
-        if value == c["on_value"] or (not isinstance(value, str) and bool(value) is True):
-            value = True
-        else:
-            value = False
-
-        addr = self.start + int(coil["bit"]) - 1
-        log.info(f"Writing coil at address {addr} with value {value}.")
-        rr = src.client.write_coil(addr, value, slave=unitid)
-        if not rr:
-            raise ModbusException("Received empty modbus respone.")
-        if rr.isError():
-            raise ModbusException(f"Received Modbus library error({rr}).")
-        if isinstance(rr, ExceptionResponse):
-            raise ModbusException(f"Received Modbus library exception ({rr}).")
+class ModbusEntity(SungrowRegister):
+    """Class for direct Modbus registers (Sensors/Switches)"""
+    def __init__(self, config_dict):
+        super().__init__(config_dict)
+        self.state_unique_id = config_dict.get('state_unique_id')
+        self.address = config_dict.get('address')
+        self.input_type = config_dict.get('input_type') # input / holding
+        self.write_type = config_dict.get('write_type') # input / holding
+        self.data_type = config_dict.get('data_type', 'uint16')
+        self.scale = config_dict.get('scale', 1)
+        self.count = config_dict.get('count', 1)
+        self.precision = config_dict.get('precision', 0)
+        self.scan_interval = config_dict.get('scan_interval', 10)
+        self.command_on = config_dict.get('command_on')
+        self.command_off = config_dict.get('command_off')
 
 
-class HoldingRegister(Register):
-    # Keep the function name but can read holding and input registers.
-    #    pass the parameter "typereg" with the value "holding" or "input" to define the type of register to read.
-    #    pass the parameter "littleendian" with the value False or true (little endian) to define the endianness of the register to read. (Solax use little endian)
+class TemplateEntity(SungrowRegister):
+    """Class for calculated sensors (Templates)"""
+    def __init__(self, config_dict):
+        super().__init__(config_dict)
+        self.state = config_dict.get('state')
+        # Templates often refer to other registers
+        self.availability = config_dict.get('availability')
 
-    def __init__(self, name: str, topic: str, register: int, typereg: str = "holding", littleendian: bool = False, length: int = 1,
-                mode: str = "r", substract: float = 0, divide: float = 1, min: float = None, max: float = None,
-                format: str = "integer", byteorder: str = "big", wordorder: str = "big",
-                decimals: int = 0, signed: bool = False, unitid: int = None, **kvargs):
-        super().__init__(name, topic, register, length, mode, unitid=unitid)
-        self.divide = divide
-        self.decimals = decimals
-        self.substract = substract
-        self.minvalue = min
-        self.maxvalue = max
-        self.signed = signed
-        self.typereg = typereg
-        self.format = "float" if format.lower() == "float" else "integer"
-        self.byteorder = Endian.LITTLE if (byteorder.lower() == "little" or littleendian) else Endian.BIG
-        self.wordorder = Endian.LITTLE if (wordorder.lower() == "little" or littleendian) else Endian.BIG
-        self.littleendian = True if (littleendian or (byteorder.lower() == "little" and wordorder.lower() == "little")) else False
+class Registers:
+    def __init__(self, registerfile: str, inverter, mqtt_client):
+        self.inverter = inverter
+        self.mqtt_client = mqtt_client
+        self.registerfile_path = registerfile
+        self.registerfile = None
 
-    def get_value(self, src):
-        unitid = self.unitid
-        if unitid is None:
-            unitid = src.unitid
-        if (self.typereg.lower() == "holding"):
-            rr = src.client.read_holding_registers(self.start, self.length, slave=unitid)
-        else:
-            rr = src.client.read_input_registers(self.start, self.length, slave=unitid)
-        if not rr:
-            raise ModbusException("Received empty modbus respone.")
-        if rr.isError():
-            raise ModbusException(f"Received Modbus library error({rr}).")
-        if isinstance(rr, ExceptionResponse):
-            raise ModbusException(f"Received Modbus library exception ({rr}).")
+        # Register YAML constructor for !secret
+        yaml.add_constructor('!secret', self.secret_constructor)
+        self.load_registerfile()
 
-        if (self.format == "float"):
-            decoder = BinaryPayloadDecoder.fromRegisters(rr.registers, self.byteorder, wordorder=self.wordorder)
-            val = decoder.decode_32bit_float()
+    def load_registerfile(self):
+        """Loads the local YAML file."""
+        try:
+            with open(self.registerfile_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                self.registerfile = yaml.load(content, Loader=yaml.FullLoader)
+        except Exception as e:
+            log.error(f"Error loading register file: {e}")
+            self.registerfile = {}
 
-        elif (self.littleendian):
-            # Read multiple bytes in little endian mode
-            h = ""
-            for i in range(0, self.length):
-                h = hex(rr.registers[i]).split('x')[-1].zfill(4) + h
-            log.debug(f"Got Value {h} from {self.typereg} register {self.start} with length {self.length} from unit {unitid} in little endian mode.")
-            val = int(h, 16)
+    def configure(self):
+        """
+        Generates two lists:
+        1. modbus_sensor_lists: For the inverter to poll (input/holding)
+        2. ha_sensor_lists: For MQTT Discovery (sensor/switch/etc)
+        """
+        mappings = [
+            (['modbus', 0, 'sensors'], "sensor", "both"),
+            (['modbus', 0, 'switches'], "switch", "both"),
+            (['template', 0, 'binary_sensor'], "binary_sensor", "ha_sensor"),
+            (['template', 1, 'number'], "number", "ha_sensor"),
+            (['template', 2, 'sensor'], "sensor", "ha_sensor"),
+            (['template', 3, 'switch'], "switch", "ha_sensor"),
+            (['template', 4, 'button'], "button", "ha_sensor"),
+            (['template', 5, 'select'], "select", "ha_sensor")
+        ]
 
-        else:
-            # Read multiple bytes in big endian mode
-            h = ""
-            for i in range(0, self.length):
-                h = h + hex(rr.registers[i]).split('x')[-1].zfill(4)
-            log.debug(f"Got Value {h} from {self.typereg} register {self.start} with length {self.length} from unit {unitid} in big endian mode.")
-            val = int(h, 16)
+        ha_sensor_lists = {
+            "sensor": [],
+            "binary_sensor": [],
+            "button": [],
+            "select": [],
+            "switch": [],
+            "number": []
+        }
 
-        if self.format == "float":
-            if self.decimals > 0:
-                fmt = '{0:.' + str(self.decimals) + 'f}'
-                val = float(fmt.format((float(val) - float(self.substract)) / float(self.divide)))
-            else:
-                val = int(((float(val) - float(self.substract)) / float(self.divide)))
+        modbus_sensor_lists = {
+            "sensor": [],
+            "switches": []
+        }
 
-            if (self.maxvalue is not None and float(val) > float(self.maxvalue)) or (self.minvalue is not None and float(val) < float(self.minvalue)):
-                return None
-            return val
+        if not self.registerfile:
+            return
 
-        if self.signed and int(val) >= 32768:
-            val = int(val) - 65535
+        for path, sensor_type, target_type in mappings:
+            sensors = self._get_from_path(self.registerfile, path)
+            if sensors is None:
+                continue
 
-        if self.decimals > 0:
-            fmt = '{0:.' + str(self.decimals) + 'f}'
-            val = float(fmt.format((int(val) - float(self.substract)) / float(self.divide)))
-        else:
-            val = int(((int(val) - float(self.substract)) / float(self.divide)))
+            for sensor_cfg in sensors:
+                # Inject type for constructor
+                sensor_cfg['sensor_type'] = sensor_type
+                
+                if 'verify' in sensor_cfg:
+                    for type in modbus_sensor_lists.keys():
+                        for verify_sensor in modbus_sensor_lists[type]:
+                            if verify_sensor['address'] == sensor_cfg['address']:
+                                sensor_cfg['state_unique_id'] = verify_sensor['unique_id']
+                                break
+                
+                # Instantiation based on content
+                if 'address' in sensor_cfg:
+                    instance = ModbusEntity(sensor_cfg)
+                else:
+                    instance = TemplateEntity(sensor_cfg)
 
-        if (self.maxvalue is not None and float(val) > float(self.maxvalue)) or (self.minvalue is not None and float(val) < float(self.minvalue)):
+                # Assignment to HA Discovery list
+                if sensor_type in ha_sensor_lists:
+                    ha_sensor_lists[sensor_type].append(instance.__dict__)
+
+                if sensor_type in modbus_sensor_lists:
+                    modbus_sensor_lists[sensor_type].append(instance.__dict__)
+        
+        # Pass to subsystems
+        self.inverter.registers = modbus_sensor_lists
+        self.mqtt_client.ha_sensors = ha_sensor_lists
+
+    def _get_from_path(self, data, path):
+        """Helper method to navigate through the YAML structure."""
+        try:
+            for key in path:
+                data = data[key]
+            return data
+        except (KeyError, IndexError, TypeError):
             return None
 
+    def secret_constructor(self, loader, node):
+        """
+        Constructor for !secret in YAML.
+        Replaces placeholders with values from the inverter configuration.
+        """
+        value_key = loader.construct_scalar(node)
+        if value_key.startswith("sungrow_modbus_"):
+            value_key = value_key[len("sungrow_modbus_"):]
+        
+        # Mapping special keys from modbus_sungrow.yaml
+        special_keys = {
+            "host_ip": lambda: self.inverter.client_config.get("host"),
+            "wait_milliseconds": lambda: self.inverter.client_config.get("timeout", 5) * 100,
+            "device_address": lambda: self.inverter.client_config.get("slave"),
+            "battery_max_power": lambda: self.inverter.inverter_config.get("battery_max_power", 7000)
+        }
+        
+        if value_key in special_keys:
+            return special_keys[value_key]()
+        
+        # Fallback to client_config
+        val = self.inverter.client_config.get(value_key)
+        if val is None:
+            # Last attempt in inverter_config
+            val = self.inverter.inverter_config.get(value_key)
         return val
-
-    def set_value(self, src, params):
-        unitid = self.unitid
-        if unitid is None:
-            unitid = src.unitid
-
-        value = params.get("value", None)
-        if value is None:
-            # Can't set unknown state
-            return False
-
-        bo = Endian.BIG
-        if self.littleendian:
-            bo = Endian.LITTLE
-
-        builder = BinaryPayloadBuilder(byteorder=bo, wordorder=bo)
-        payload = None
-        if self.format == "float":
-            builder.add_32bit_float(float(value))
-            payload = builder.to_registers()
-        else:
-            payload = int(value)
-
-        addr = self.start
-        log.info(f"Writing register at address {addr} with value {value}.")
-        rr = src.client.write_registers(addr, payload, slave=unitid)
-        if not rr:
-            raise ModbusException("Received empty modbus respone.")
-        if rr.isError():
-            raise ModbusException(f"Received Modbus library error({rr}).")
-        if isinstance(rr, ExceptionResponse):
-            raise ModbusException(f"Received Modbus library exception ({rr}).")
