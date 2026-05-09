@@ -3,6 +3,9 @@
 # Sungrow2MQTT Home Assistant Add-on
 
 ## Changelog
+### [1.0.5] - 2026-05-09
+- Refactor logging implementation: unify logger usage across modules and enhance log formatting
+
 ### [1.0.4] - 2026-05-08
 #### Changed
 - Refactored main application loop into modular functions (`poll_and_publish`, `handle_error`, `main_loop`) for better maintainability

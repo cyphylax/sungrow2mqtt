@@ -1,7 +1,7 @@
 import yaml
 import logging
 import requests
-
+log = logging.getLogger(__name__)
 registeryml_remote = "https://raw.githubusercontent.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant/refs/heads/main/modbus_sungrow.yaml"
 
 
@@ -34,9 +34,9 @@ class Registers:
                 if local_lines:
                     local_version = local_lines[0]
         except FileNotFoundError:
-            logging.warning(f"Local register file not found: {self.registerfile_path}")
+            log.warning(f"Local register file not found: {self.registerfile_path}")
         except Exception as e:
-            logging.error(f"Failed to read local register file {self.registerfile_path}: {e}")
+            log.error(f"Failed to read local register file {self.registerfile_path}: {e}")
 
         remote_content = None
         remote_version = None
@@ -49,29 +49,29 @@ class Registers:
                 if remote_lines:
                     remote_version = remote_lines[0]
             else:
-                logging.error(f"Failed to load remote register file: HTTP {response.status_code}")
+                log.error(f"Failed to load remote register file: HTTP {response.status_code}")
         except Exception as e:
-            logging.error(f"Exception while fetching remote register file: {e}")
+            log.error(f"Exception while fetching remote register file: {e}")
 
         content_to_load = None
 
         if local_version and remote_version:
             if local_version == remote_version:
-                logging.info("Local register file is up to date")
+                log.info("Local register file is up to date")
                 content_to_load = local_content
             else:
-                logging.info("Remote register file is newer, updating local file")
+                log.info("Remote register file is newer, updating local file")
                 content_to_load = remote_content
                 self._save_local_file(remote_content)
         elif local_content:
-            logging.warning("Remote register file not available, loading local")
+            log.warning("Remote register file not available, loading local")
             content_to_load = local_content
         elif remote_content:
-            logging.warning("Local register file missing, downloading remote")
+            log.warning("Local register file missing, downloading remote")
             content_to_load = remote_content
             self._save_local_file(remote_content)
         else:
-            logging.error("No register file could be loaded")
+            log.error("No register file could be loaded")
             self.registerfile = {}
             return
 
@@ -82,16 +82,16 @@ class Registers:
         try:
             self.registerfile = yaml.load(content_to_load, Loader=yaml.FullLoader)
         except yaml.YAMLError as e:
-            logging.error(f"Failed to parse YAML content: {e}", exc_info=True)
+            log.error(f"Failed to parse YAML content: {e}", exc_info=True)
             self.registerfile = {}
 
     def _save_local_file(self, content):
         try:
             with open(self.registerfile_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-            logging.info(f"Updated local register file: {self.registerfile_path}")
+            log.info(f"Updated local register file: {self.registerfile_path}")
         except Exception as e:
-            logging.error(f"Failed to save local register file: {e}", exc_info=True)
+            log.error(f"Failed to save local register file: {e}", exc_info=True)
 
     def configure(self):
         mappings = [
@@ -122,7 +122,7 @@ class Registers:
         for path, sensor_type, ha_sensor_type in mappings:
             sensors = self._get_from_path(self.registerfile, path)
             if sensors is None:
-                logging.warning(f"No sensors found at path: {path}")
+                log.warning(f"No sensors found at path: {path}")
                 continue
             for sensor in sensors:
                 unique_id = sensor.get('unique_id', 'unknown').split("_")

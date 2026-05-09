@@ -2,10 +2,10 @@ import logging
 from datetime import datetime, timedelta
 from modules import register
 from pymodbus.client.sync import ModbusTcpClient
+log = logging.getLogger(__name__)
 
 class Client:
     def __init__(self, config):
-        logging.info('SungrowClient initialized')
         self.client_config = {
             "host": config['inverter'].get('host'),
             "port": config['inverter'].get('port'),
@@ -18,24 +18,26 @@ class Client:
         }
         self.inverter_config = {}
         self.client = None
+        self.serial_number = None
+        self.model = None
         self.registers = {}
         self.address_lookup = {}
         self.read_blocks = {"input": [], "holding": []}
         self.last_scrape = {}
-        logging.debug('Inverter configuration loaded')
+        log.debug('Inverter configuration loaded')
 
     def configure_inverter(self):
         blacklist = {}
         if self.client_config['winet_connection']:
-            logging.info("WiNET-S connection selected, cleanup address lookup to use with WiNET-S.")
+            log.info("WiNET-S connection selected, cleanup address lookup to use with WiNET-S.")
             try:
                 with open("/app/config/blacklist", "r") as f:
                     b = f.read().replace(' ', '').replace('\n', ',').split(',')
                 blacklist = {b[i]: b[i + 1] for i in range(0, len(b), 2)}
             except FileNotFoundError:
-                logging.warning("Blacklist file not found.")
+                log.warning("Blacklist file not found.")
             except Exception as e:
-                logging.error(f"Error loading blacklist: {e}")
+                log.error(f"Error loading blacklist: {e}")
 
         # Build address lookup table
         try:
@@ -50,12 +52,12 @@ class Client:
                                     continue
                             self.address_lookup.setdefault((addr, typ), []).append(reg)
         except Exception as e:
-            logging.error(f"Error building address lookup: {e}")
+            log.error(f"Error building address lookup: {e}")
             raise
 
         self._build_read_blocks()
 
-        logging.info(f"Configuring Modbus TCP client for {self.client_config['host']}:{self.client_config['port']}")
+        log.info(f"Configuring Modbus TCP client for {self.client_config['host']}:{self.client_config['port']}")
         self.client = ModbusTcpClient(
             self.client_config['host'],
             port=self.client_config['port'],
@@ -64,17 +66,18 @@ class Client:
 
         try:
             if not self.client.connect():
-                logging.error("Failed to connect to Modbus server")
+                log.error("Failed to connect to Modbus server")
                 raise ConnectionError("Could not connect to Modbus server")
         except Exception as e:
-            logging.error(f"Error connecting to Modbus server: {e}")
+            log.error(f"Error connecting to Modbus server: {e}")
             raise
 
         try:
             self._read_register_value()
         except Exception as e:
-            logging.error(f"Error reading initial register values: {e}")
+            log.error(f"Error reading initial register values: {e}")
             raise
+        log.info(f'Inverter configured successfully. Model: {self.model}, Serial Number: {self.serial_number}')
 
     def _build_read_blocks(self, max_count=125):
         """Build contiguous Modbus read blocks from the register lookup."""
@@ -136,42 +139,50 @@ class Client:
                         for reg in block['regs']:
                             reg['last_scrape'] = now
 
+    def validateRegister(self, unique_id):
+        """Validates if a register unique_id is defined in the address lookup."""
+        for regs in self.address_lookup.values():
+            for reg in regs:
+                if reg.get('unique_id') == unique_id:
+                    return True
+        return False
+
     def get_register_values(self, unique_id):
         return self.last_scrape.get(unique_id)
 
     def load_register_block(self, register_type, start, count) -> bool:
         if self.client is None:
-            logging.error("Modbus client is not connected")
+            log.error("Modbus client is not connected")
             return False
 
         if not register_type or start is None:
-            logging.warning("Missing input_type or address for block read")
+            log.warning("Missing input_type or address for block read")
             return False
 
         try:
-            logging.debug(f'Block read: {register_type}, {start}:{count}')
+            log.debug(f'Block read: {register_type}, {start}:{count}')
             if register_type == "input":
                 rr = self.client.read_input_registers(start, count=count, unit=self.client_config['slave'])
             elif register_type == "holding":
                 rr = self.client.read_holding_registers(start, count=count, unit=self.client_config['slave'])
             else:
-                logging.error(f"Unsupported register type: {register_type}")
+                log.error(f"Unsupported register type: {register_type}")
                 return False
         except Exception as err:
-            logging.warning(f"Exception reading block {register_type}, {start}:{count} - {err}")
+            log.warning(f"Exception reading block {register_type}, {start}:{count} - {err}")
             return False
 
         if rr.isError():
-            logging.warning(f"Modbus read failed for block {register_type} {start}:{count}")
-            logging.debug(f"Response: {str(rr)}")
+            log.warning(f"Modbus read failed for block {register_type} {start}:{count}")
+            log.debug(f"Response: {str(rr)}")
             return False
 
         if not hasattr(rr, 'registers'):
-            logging.warning("No registers attribute in response")
+            log.warning("No registers attribute in response")
             return False
 
         if len(rr.registers) < count:
-            logging.warning(f"Mismatched register count read: {len(rr.registers)} < {count}")
+            log.warning(f"Mismatched register count read: {len(rr.registers)} < {count}")
             return False
 
         self._process_register_block(start, register_type, rr.registers)
@@ -195,7 +206,7 @@ class Client:
         Parses the values based on 'address_lookup' and stores them in 'last_scrape'.
         """
         if self.client is None:
-            logging.error("Modbus client is not connected")
+            log.error("Modbus client is not connected")
             return False
 
         register_type = register.get('input_type')
@@ -203,33 +214,33 @@ class Client:
         count = register.get('count',100)
 
         if not register_type or start is None:
-            logging.warning("Missing input_type or address in register")
+            log.warning("Missing input_type or address in register")
             return False
 
         try:
-            logging.debug(f'Register laden: {register_type}, {start}:{count}')
+            log.debug(f'Register laden: {register_type}, {start}:{count}')
             if register_type == "input":
                 rr = self.client.read_input_registers(start, count=count, unit=self.client_config['slave'])
             elif register_type == "holding":
                 rr = self.client.read_holding_registers(start, count=count, unit=self.client_config['slave'])
             else:
-                logging.error(f"Unbekannter Register-Typ: {register_type}")
+                log.error(f"Unbekannter Register-Typ: {register_type}")
                 return False
         except Exception as err:
-            logging.warning(f"Exception reading {register_type}, {start}:{count} - {err}")
+            log.warning(f"Exception reading {register_type}, {start}:{count} - {err}")
             return False
 
         if rr.isError():
-            logging.warning(f"Modbus read failed for {register_type} {start}:{count}")
-            logging.debug(f"Response: {str(rr)}")
+            log.warning(f"Modbus read failed for {register_type} {start}:{count}")
+            log.debug(f"Response: {str(rr)}")
             return False
 
         if not hasattr(rr, 'registers'):
-            logging.warning("No registers attribute in response")
+            log.warning("No registers attribute in response")
             return False
 
         if len(rr.registers) < count:
-            logging.warning(f"Mismatched register count read: {len(rr.registers)} < {count}")
+            log.warning(f"Mismatched register count read: {len(rr.registers)} < {count}")
             return False
 
         # Process the register block
@@ -285,7 +296,7 @@ class Client:
                         elif datatype in ("uint32", "int32"):
                             # Check bounds for 32-bit value (needs 2 registers)
                             if num + 1 >= total_count:
-                                logging.warning(f"Not enough data for 32-bit value at {addr}")
+                                log.warning(f"Not enough data for 32-bit value at {addr}")
                                 parsed_value = 0
                             else:
                                 next_value = raw_registers[num + 1]
@@ -345,19 +356,19 @@ class Client:
                         # 3. Store Result
                         self.last_scrape[unique_id] = parsed_value
                     except Exception as e:
-                        logging.warning(f"Error processing register {reg.get('unique_id', addr)}: {e}")
+                        log.warning(f"Error processing register {reg.get('unique_id', addr)}: {e}")
 
                 num += increment
         except Exception as e:
-            logging.error(f"Error in _process_register_block: {e}", exc_info=True)
+            log.error(f"Error in _process_register_block: {e}", exc_info=True)
 
     def close(self):
         try:
             if self.client:
                 self.client.close()
-                logging.info("Modbus client connection closed")
+                log.info("Modbus client connection closed")
         except Exception as e:
-            logging.error(f"Error closing Modbus client: {e}", exc_info=True)
+            log.error(f"Error closing Modbus client: {e}", exc_info=True)
 
     def __del__(self):
         self.close()
