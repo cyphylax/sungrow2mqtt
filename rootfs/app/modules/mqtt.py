@@ -138,6 +138,9 @@ class Client(object):
             # Build Device, this will be the same for every message
             ha_device = { "name":f"Sungrow {self.model}", "manufacturer":"Sungrow", "model":self.model, "identifiers":self.serial_number, "via_device": "sungrow2mqtt", "connections":[["address", inverter.client.host + ":" + str(inverter.client.port)]] }
 
+            # Dynamically update min/max limits based on actual inverter data
+            self._update_dynamic_limits(inverter)
+
             for sensor_type, sensors in self.ha_sensors.items():
                 for ha_sensor in sensors:
                     config_msg = {}
@@ -147,7 +150,7 @@ class Client(object):
 
                     # Base topics
                     sensor_uid = ha_sensor.get('unique_id')
-                    config_msg['unique_id'] = f"{self.serial_number}_{ha_sensor.get('unique_id')}"
+                    config_msg['unique_id'] = f"{self.serial_number}_{sensor_type}_{ha_sensor.get('unique_id')}"
                     config_msg['availability_topic'] = self.config['topic']
                     config_msg['state_topic'] = f"{self.config['topic']}/{sensor_uid}"
 
@@ -194,6 +197,25 @@ class Client(object):
         #log.info(f"MQTT: {len(inverter.last_scrape)} Registers Published individually")
 
         return True
+
+    def _update_dynamic_limits(self, inverter):
+        """Updates entity limits (max) based on real-time inverter metadata (e.g. rated power)"""
+        # Map: target entity unique_id (cleaned) -> limit source sensor unique_id (cleaned)
+        dynamic_map = {
+            "battery_max_charge_power": "bdc_rated_power",
+            "battery_max_discharge_power": "bdc_rated_power",
+            "battery_forced_charge_discharge_power": "bdc_rated_power",
+            "export_power_limit": "export_power_limit_max"
+        }
+        for sensor_type, sensors in self.ha_sensors.items():
+            for ha_sensor in sensors:
+                uid = ha_sensor.get('unique_id')
+                if uid in dynamic_map:
+                    limit_uid = dynamic_map[uid]
+                    limit_val = inverter.last_scrape.get(limit_uid)
+                    if limit_val is not None and isinstance(limit_val, (int, float)):
+                        ha_sensor['max'] = limit_val
+                        log.info(f"MQTT: Dynamically set max for {uid} to {limit_val}W based on {limit_uid}")
 
     def handle_writes(self, inverter):
         """

@@ -15,12 +15,16 @@ class SungrowRegister:
         self.device_class = config_dict.get('device_class')
         self.state_class = config_dict.get('state_class')
         self.icon = config_dict.get('icon')
+        # Ensure UI limits are captured for MQTT Discovery
+        self.min = config_dict.get('min')
+        self.max = config_dict.get('max')
+        self.step = config_dict.get('step')
         
         # Keep raw data for specific logic
         self.raw_config = config_dict
 
     def _clean_unique_id(self, uid):
-        """Removes prefixes like sg_ or uid_ similar to ConfigParser"""
+        """Removes prefixes like sg_ or uid_ to match HA entity naming conventions"""
         parts = uid.split("_")
         while parts and parts[0] in ["sg", "uid"]:
             parts.pop(0)
@@ -71,14 +75,15 @@ class TemplateEntity(SungrowRegister):
     """Class for calculated sensors (Templates)"""
     def __init__(self, config_dict):
         super().__init__(config_dict)
-        if config_dict.get('state') and config_dict.get('availability'):
+        if config_dict.get('state'):
             self.state = config_dict.get('state')
+        if config_dict.get('availability'):
             self.availability = config_dict.get('availability')
-            self.delay_on = config_dict.get('delay_on')
-            self.delay_off = config_dict.get('delay_off')
+        self.delay_on = config_dict.get('delay_on')
+        self.delay_off = config_dict.get('delay_off')
         if config_dict.get('sensor_type') == 'binary_sensor':
-            self.payload_on = config_dict.get('payload_on', True)
-            self.payload_off = config_dict.get('payload_off', False)
+            self.payload_on = config_dict.get('payload_on', 'ON')
+            self.payload_off = config_dict.get('payload_off', 'OFF')
         
         # Extract Modbus write information from templates (number, select, button)
         self.address = None
@@ -207,7 +212,9 @@ class Registers:
             "host_ip": lambda: self.inverter.client_config.get("host"),
             "wait_milliseconds": lambda: self.inverter.client_config.get("timeout", 5) * 100,
             "device_address": lambda: self.inverter.client_config.get("slave"),
-            "battery_max_power": lambda: self.inverter.inverter_config.get("battery_max_power", 7000)
+            "battery_max_power": lambda: self.inverter.inverter_config.get("battery_max_power", 7000),
+            "battery_max_charge_power": lambda: self.inverter.inverter_config.get("battery_max_charge_power", 7600),
+            "battery_max_discharge_power": lambda: self.inverter.inverter_config.get("battery_max_discharge_power", 5000)
         }
         
         if value_key in special_keys:
