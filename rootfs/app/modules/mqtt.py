@@ -78,10 +78,16 @@ class Client(object):
         
     def on_publish(self, client, userdata, mid, reason_codes, properties):
         try:
+            # reason_codes is a list for MQTT v5
+            if isinstance(reason_codes, list):
+                for rc in reason_codes:
+                    if rc >= 128:
+                        log.error(f"MQTT: Publish failed for message {mid}. Reason: {rc}")
+            
             if mid in self.mqtt_queue:
                 self.mqtt_queue.remove(mid)
         except Exception as err:
-            pass
+            log.debug(f"MQTT: Error in on_publish tracking: {err}")
         log.debug(f"MQTT: Message {mid} Published")
 
     def on_message(self, client, userdata, msg):
@@ -119,9 +125,10 @@ class Client(object):
     def publish(self, inverter):
         try:
             if not self.mqtt_client.is_connected():
-                log.warning(f'MQTT: Server Disconnected; {self.mqtt_queue.__len__()} messages queued, will automatically attempt to reconnect')
+                log.warning(f'MQTT: Server Disconnected; {len(self.mqtt_queue)} messages in tracking queue. Skipping publish to avoid flooding.')
+                return False
         except Exception as err:
-            log.warning(f'MQTT: Server Error; Server not configured')
+            log.warning(f'MQTT: Server Error; {err}')
             return False
         # qos=0 is set, so no acknowledgment is sent, rending this check useless
         #elif self.mqtt_queue.__len__() > 10:
