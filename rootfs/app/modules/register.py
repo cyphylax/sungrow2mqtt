@@ -49,7 +49,7 @@ class ModbusEntity(SungrowRegister):
         super().__init__(config_dict)
         self.address = config_dict.get('address')
         self.data_type = config_dict.get('data_type')
-        self.count = config_dict.get('count', 1)
+        self.count = config_dict.get('count')
         self.scale = config_dict.get('scale')
         self.offset = config_dict.get('offset', 0)
         self.mask = config_dict.get('mask')

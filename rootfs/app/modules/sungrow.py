@@ -454,9 +454,8 @@ class Client:
                     elif datatype in ("uint32", "int32"):
                         # Check bounds for 32-bit value (needs 2 registers)
                         if offset + 1 >= total_count:
-                            continue
                             logging.warning(f"Not enough data for 32-bit value at {addr}")
-                            parsed_value = 0
+                            continue
                         else:
                             next_value = raw_registers[offset + 1]
                             
