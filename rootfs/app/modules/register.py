@@ -28,10 +28,11 @@ class SungrowRegister:
 
     def _clean_jinja_template(self, template):
         if 'unavailable' in template:
-            availability = re.search(r"states\('(.+?)'\)", template)
-            if availability:
-                availability = availability.group(1)
-            return availability.split('.')[1] # type: ignore
+            match = re.search(r"states\('(.+?)'\)", template)
+            if match:
+                parts = match.group(1).split('.')
+                return parts[1] if len(parts) > 1 else parts[0]
+            return "unknown"
         else:
             parts = template.replace("{{", "").replace("}}", "").replace(" ", "").split("|")
             if any('bitwise_and' in p for p in parts):

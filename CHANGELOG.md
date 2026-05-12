@@ -3,7 +3,14 @@
 # Sungrow2MQTT Home Assistant Add-on
 
 ## Changelog
-### [1.1.0] - 2026-05-xx
+### [1.1.1] - 2026-05-12
+#### Changed
+- version number, documentation
+
+#### Fixed
+- jinja to requirements.txt - docker error
+
+### [1.1.0] - 2026-05-12
 #### Added
 - **Write Support**: Preliminary support for writing to Modbus registers via MQTT.
 - Added option for connecting to WiNET-S/WiNET-S2 communication modules (using read-only registers).

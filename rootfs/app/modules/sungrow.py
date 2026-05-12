@@ -222,7 +222,7 @@ class Client:
                     
                     # Binary conversion for bitwise results
                     if "|bitwise_and" in state_tmpl:
-                        raw_calc = "ON" if str(raw_calc) not in ['0', 'False', 'OFF'] else "OFF"
+                        raw_calc = "ON" if (raw_calc and str(raw_calc).upper() not in ['0', '0.0', 'FALSE', 'OFF']) else "OFF"
 
                     # 3. Delay logic (for binary sensors) - move out of else to avoid UnboundLocalError
                     delay_on = reg.get('delay_on')
