@@ -15,5 +15,3 @@ RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 
 RUN chmod +x /etc/services.d/sungrow2mqtt/run
-# Set the default command to run when starting the container
-CMD ["/etc/services.d/sungrow2mqtt/run"]

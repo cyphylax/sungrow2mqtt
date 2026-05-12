@@ -76,7 +76,7 @@ class Client:
         })
 
     def _to_int(self, v):
-        """Hilfsfunktion zur sicheren Konvertierung von nan_value (auch Hex-Strings)."""
+        """Helper function for safe conversion of nan_values (including hex strings)."""
         if v is None:
             return None
         if isinstance(v, int): return v
@@ -157,8 +157,8 @@ class Client:
                 if count is None:
                     count = 2 if datatype in ('uint32', 'int32') else 1
                 count = int(count)
-                # Wir fügen die volle Breite des Registers als eine Einheit hinzu.
-                # Das verhindert, dass 32-Bit Werte oder Strings zerstückelt werden.
+                # Add the full width of the register as a single unit.
+                # This prevents 32-bit values or strings from being fragmented.
                 ranges_by_type[typ].append({"start": reg_start, "end": reg_start + count - 1, "regs": [reg]})
 
         for typ, ranges in ranges_by_type.items():
@@ -197,13 +197,9 @@ class Client:
         now = datetime.now()
         for sensor_type, sensors in ha_sensors.items():
             for reg in sensors:
-                # Only sensors without a Modbus address are templates
-                if 'address' in reg:
-                    continue
-                
                 uid = reg.get('unique_id')
-                state_tmpl = reg.get('state')
-                if not state_tmpl or not uid:
+                state_tmpl = reg.get('state') or reg.get('raw_config', {}).get('state')
+                if not state_tmpl or not uid or reg.get('input_type') in ['input', 'holding']:
                     continue
 
                 try:
@@ -220,27 +216,37 @@ class Client:
                     if re.match(r"^-?\d+(\.\d+)?$", raw_calc):
                         raw_calc = float(raw_calc) if '.' in raw_calc else int(raw_calc)
                     
-                    # Binary conversion for bitwise results
-                    if "|bitwise_and" in state_tmpl:
-                        raw_calc = "ON" if str(raw_calc) not in ['0', 'False', 'OFF'] else "OFF"
-
-                    # 3. Delay logic (for binary sensors) - move out of else to avoid UnboundLocalError
-                    delay_on = reg.get('delay_on')
-                    if sensor_type == 'binary_sensor' and delay_on:
-                        seconds = int(delay_on.get('seconds', 0)) + int(delay_on.get('minutes', 0)) * 60
-                        last_val = self.last_scrape.get(uid, "OFF")
-                        
-                        if raw_calc == "ON" and last_val == "OFF":
-                            if uid not in self.template_tracking:
-                                self.template_tracking[uid] = now
-                            if (now - self.template_tracking[uid]).total_seconds() >= seconds:
-                                self.last_scrape[uid] = "ON"
-                                self.template_tracking.pop(uid, None)
-                            else:
-                                self.last_scrape[uid] = "OFF"
+                    if sensor_type == 'binary_sensor':
+                        # Detect truthiness of the template result
+                        is_on = False
+                        if isinstance(raw_calc, bool):
+                            is_on = raw_calc
+                        elif isinstance(raw_calc, (int, float)):
+                            is_on = raw_calc != 0
                         else:
-                            self.template_tracking.pop(uid, None)
-                            self.last_scrape[uid] = raw_calc
+                            is_on = str(raw_calc).upper() in ['ON', 'TRUE', '1', 'YES', 'OPEN']
+
+                        p_on = reg.get('payload_on', 'ON')
+                        p_off = reg.get('payload_off', 'OFF')
+
+                        delay_on = reg.get('delay_on')
+                        if delay_on:
+                            seconds = int(delay_on.get('seconds', 0)) + int(delay_on.get('minutes', 0)) * 60
+                            last_val = self.last_scrape.get(uid, p_off)
+                            
+                            if is_on and last_val == p_off:
+                                if uid not in self.template_tracking:
+                                    self.template_tracking[uid] = now
+                                if (now - self.template_tracking[uid]).total_seconds() >= seconds:
+                                    self.last_scrape[uid] = p_on
+                                    self.template_tracking.pop(uid, None)
+                                else:
+                                    self.last_scrape[uid] = p_off
+                            else:
+                                self.template_tracking.pop(uid, None)
+                                self.last_scrape[uid] = p_on if is_on else p_off
+                        else:
+                            self.last_scrape[uid] = p_on if is_on else p_off
                     else:
                         self.last_scrape[uid] = raw_calc
 
@@ -330,7 +336,7 @@ class Client:
         # Get model mapping from register file if available
         model_mapping = {}
         for reg_dict in self.registers.get("sensor", []):
-            if reg_dict.get("unique_id") == "device_type": # sg_device_type wird zu device_type
+            if reg_dict.get("unique_id") == "device_type":
                 model_mapping = self._extract_map_from_jinja(reg_dict.get('state'))
                 break
 
@@ -368,11 +374,11 @@ class Client:
         count = int(count)
 
         if not register_type or start is None:
-            log.warning("Missing input_type or address in register")
+            log.warning("Missing input_type or address in register definition")
             return False
 
         try:
-            log.debug(f'Register laden: {register_type}, {start}:{count}')
+            log.debug(f'Loading register: {register_type}, {start}:{count}')
             if register_type == "input":
                 rr = self.client.read_input_registers(start, count=count, unit=self.client_config['slave'])
             elif register_type == "holding":
@@ -432,6 +438,7 @@ class Client:
                     parsed_value = None
                     reg_value = raw_registers[offset]
                     if reg_value == target_nan:
+                        self.last_scrape[unique_id] = None
                         continue
                     
                     # 1. Raw Value Extraction & Type Conversion
@@ -454,9 +461,8 @@ class Client:
                     elif datatype in ("uint32", "int32"):
                         # Check bounds for 32-bit value (needs 2 registers)
                         if offset + 1 >= total_count:
-                            continue
                             logging.warning(f"Not enough data for 32-bit value at {addr}")
-                            parsed_value = 0
+                            continue
                         else:
                             next_value = raw_registers[offset + 1]
                             
