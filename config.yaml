@@ -23,6 +23,7 @@ options:
   scan:
     interval: 30
     timeout: 5
+  homeassistant: true
   log_level: "INFO"
 schema:
   inverter:
@@ -38,4 +39,5 @@ schema:
   scan:
     interval: int(10,600)
     timeout: int(3,60)
+  homeassistant: bool
   log_level: "list(INFO|WARNING|ERROR|DEBUG)"
