@@ -28,12 +28,18 @@ def logging_setup(config):
 
     formatter = CustomFormatter()
 
+    # Clear existing handlers to prevent duplicate logging if setup is called twice
+    root = logging.getLogger()
+    if root.handlers:
+        for handler in root.handlers[:]:
+            root.removeHandler(handler)
+
     handler_file = logging.handlers.TimedRotatingFileHandler(str(log_file), when='midnight', backupCount=7)
     handler_file.setFormatter(formatter)
-
     handler_stream = logging.StreamHandler()
     handler_stream.setFormatter(formatter)
-    logging.basicConfig(level=log_level, handlers=[handler_file, handler_stream])
+
+    logging.basicConfig(level=log_level, handlers=[handler_file, handler_stream], force=True)
     logging.getLogger('pymodbus').setLevel(logging.WARNING)
     logging.getLogger('asyncio').setLevel(logging.WARNING)
     logging.getLogger('winet').setLevel(logging.WARNING)
@@ -41,7 +47,7 @@ def logging_setup(config):
     logging.getLogger('modules.sungrow').setLevel(log_level)
     logging.getLogger('modules.register').setLevel(log_level)
     logging.getLogger('modules.config_parser').setLevel(log_level)
-    logging.info(f'Logging initialized. Level: {config.get("log_level", "INFO")}, Log file: {log_file}')
+    logging.info(f'Logging initialized. Level: {config.get("log_level", "INFO")}')
 
 
 def poll_and_publish(inverter, export):
@@ -95,19 +101,20 @@ if __name__ == '__main__':
     if not config_path.exists():
         logging.error(f'Config file not found: {config_path}')
         exit(1)
-    config = json.load(open(config_path))
+    
+    with open(config_path) as f:
+        config = json.load(f)
 
     logging_setup(config)
     logging.info(f'*** Sungrow2mqtt ***')
     logging.info(f'*** Version {__version__} ***')
     logging.info(f'*** Created by Cyphylax ***')
-    logging.info(f'Logging initialized. Level: {config.get("log_level", "INFO")}')
 
     ### __init__ ###
     logging.info(f'Loading configuration and initializing clients...')
     inverter = sungrow.Client(config)
     export = mqtt.Client()
-    register= modbus.Registers(register_path, inverter, export)
+    register = modbus.Registers(register_path, inverter, export)
     register.configure()
     inverter.configure_inverter()
     if not export.configure(config, inverter):
