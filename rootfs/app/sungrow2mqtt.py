@@ -57,15 +57,15 @@ def poll_and_publish(inverter, export):
         logging.warning(f'MQTT: Failed to publish status online: {publish_err}')
     export.publish(inverter)
 
-def handle_error(export, error):
+def handle_error(inverter, export, error):
     '''Handle exceptions in main loop.'''
     logging.error(f'Error in main loop: {error}', exc_info=True)
     try:
         export.mqtt_client.publish(export.config['topic'], 'offline', retain=True)
-    except Exception as publish_err:
-        logging.warning(f'MQTT: Failed to publish status offline: {publish_err}')
         export.status = 'offline'
         export.publish(inverter) # Push offline status to all topics
+    except Exception as publish_err:
+        logging.warning(f'MQTT: Failed to publish status offline: {publish_err}')
     time.sleep(5)
 
 def main_loop(inverter, export):
@@ -74,8 +74,10 @@ def main_loop(inverter, export):
     while True:
         try:
             poll_and_publish(inverter, export)
+            # Small sleep to prevent CPU pinning when no registers need polling
+            time.sleep(1)
         except Exception as e:
-            handle_error(export, e)
+            handle_error(inverter, export, e)
 
 ### Main Program Execution ###
 if __name__ == '__main__':
