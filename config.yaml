@@ -20,10 +20,10 @@ options:
     port: 1883
     username: ""
     password: ""
+    homeassistant: true
   scan:
     interval: 30
     timeout: 5
-  homeassistant: true
   log_level: "INFO"
 schema:
   inverter:
@@ -36,8 +36,8 @@ schema:
     port: port
     username: str
     password: password
+    homeassistant: bool
   scan:
     interval: int(10,600)
     timeout: int(3,60)
-  homeassistant: bool
   log_level: "list(INFO|WARNING|ERROR|DEBUG)"
