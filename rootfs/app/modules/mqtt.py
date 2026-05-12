@@ -42,6 +42,7 @@ class Client(object):
         self.mqtt_client.on_message = self.on_message
 
         if self.config['username'] and self.config['password']:
+            log.debug(f'{self.config["username"]}:{self.config["password"]} connecting to MQTT server...')
             self.mqtt_client.username_pw_set(self.config['username'], self.config['password'])
 
         if self.config['port'] == 8883:
@@ -66,14 +67,14 @@ class Client(object):
             topic_to_sub = self.config['topic'].rstrip("/") + "/+/set"
             client.subscribe(topic_to_sub, qos=0)
             log.info(f"MQTT: Subscribed to {topic_to_sub}")
-        if reason_code > 0:
-            log.warning(f"MQTT: FAILED to connect {client._host}:{client._port}")
+        else:
+            log.warning(f"MQTT: FAILED to connect to {client._host}:{client._port}. Reason: {reason_code}")
 
     def on_disconnect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
-            log.info(f"MQTT: Server Disconnected")
-        if reason_code > 0:
-            log.warning(f"MQTT: FAILED to disconnect {reason_code}")
+            log.info("MQTT: Disconnected from server (Success)")
+        else:
+            log.warning(f"MQTT: Unexpected disconnect from server. Reason: {reason_code}")
         
     def on_publish(self, client, userdata, mid, reason_codes, properties):
         try:
