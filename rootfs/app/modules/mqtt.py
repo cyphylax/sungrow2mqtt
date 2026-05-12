@@ -42,6 +42,7 @@ class Client(object):
         self.mqtt_client.on_message = self.on_message
 
         if self.config['username'] and self.config['password']:
+            log.debug("MQTT authentication configured.")
             self.mqtt_client.username_pw_set(self.config['username'], self.config['password'])
 
         if self.config['port'] == 8883:
@@ -66,21 +67,27 @@ class Client(object):
             topic_to_sub = self.config['topic'].rstrip("/") + "/+/set"
             client.subscribe(topic_to_sub, qos=0)
             log.info(f"MQTT: Subscribed to {topic_to_sub}")
-        if reason_code > 0:
-            log.warning(f"MQTT: FAILED to connect {client._host}:{client._port}")
+        else:
+            log.warning(f"MQTT: FAILED to connect to {client._host}:{client._port}. Reason: {reason_code}")
 
     def on_disconnect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
-            log.info(f"MQTT: Server Disconnected")
-        if reason_code > 0:
-            log.warning(f"MQTT: FAILED to disconnect {reason_code}")
+            log.info("MQTT: Disconnected from server (Success)")
+        else:
+            log.warning(f"MQTT: Unexpected disconnect from server. Reason: {reason_code}")
         
     def on_publish(self, client, userdata, mid, reason_codes, properties):
         try:
+            # reason_codes is a list for MQTT v5
+            if isinstance(reason_codes, list):
+                for rc in reason_codes:
+                    if rc >= 128:
+                        log.error(f"MQTT: Publish failed for message {mid}. Reason: {rc}")
+            
             if mid in self.mqtt_queue:
                 self.mqtt_queue.remove(mid)
         except Exception as err:
-            pass
+            log.debug(f"MQTT: Error in on_publish tracking: {err}")
         log.debug(f"MQTT: Message {mid} Published")
 
     def on_message(self, client, userdata, msg):
@@ -118,9 +125,10 @@ class Client(object):
     def publish(self, inverter):
         try:
             if not self.mqtt_client.is_connected():
-                log.warning(f'MQTT: Server Disconnected; {self.mqtt_queue.__len__()} messages queued, will automatically attempt to reconnect')
+                log.warning(f'MQTT: Server Disconnected; {len(self.mqtt_queue)} messages in tracking queue. Skipping publish to avoid flooding.')
+                return False
         except Exception as err:
-            log.warning(f'MQTT: Server Error; Server not configured')
+            log.warning(f'MQTT: Server Error; {err}')
             return False
         # qos=0 is set, so no acknowledgment is sent, rending this check useless
         #elif self.mqtt_queue.__len__() > 10:
@@ -129,6 +137,9 @@ class Client(object):
         if self.config['homeassistant'] and not self.ha_discovery_published:
             # Build Device, this will be the same for every message
             ha_device = { "name":f"Sungrow {self.model}", "manufacturer":"Sungrow", "model":self.model, "identifiers":self.serial_number, "via_device": "sungrow2mqtt", "connections":[["address", inverter.client.host + ":" + str(inverter.client.port)]] }
+
+            # Dynamically update min/max limits based on actual inverter data
+            self._update_dynamic_limits(inverter)
 
             for sensor_type, sensors in self.ha_sensors.items():
                 for ha_sensor in sensors:
@@ -139,7 +150,7 @@ class Client(object):
 
                     # Base topics
                     sensor_uid = ha_sensor.get('unique_id')
-                    config_msg['unique_id'] = f"{self.serial_number}_{ha_sensor.get('unique_id')}"
+                    config_msg['unique_id'] = f"{self.serial_number}_{sensor_type}_{ha_sensor.get('unique_id')}"
                     config_msg['availability_topic'] = self.config['topic']
                     config_msg['state_topic'] = f"{self.config['topic']}/{sensor_uid}"
 
@@ -147,6 +158,19 @@ class Client(object):
                     config_msg['value_template'] = "{{ value }}"
                     config_msg['unit_of_measurement'] = ha_sensor.get('unit_of_measurement')
 
+                    # Render options for select entities if they are templates
+                    if sensor_type == 'select' and ha_sensor.get('options'):
+                        opt_tmpl = ha_sensor['options']
+                        if isinstance(opt_tmpl, str) and "{{" in opt_tmpl:
+                            try:
+                                # Use variables (like 'map') from the YAML config
+                                vars = ha_sensor.get('raw_config', {}).get('variables', {})
+                                rendered = inverter.jinja_env.from_string(opt_tmpl).render(**vars)
+                                config_msg['options'] = json.loads(rendered)
+                            except Exception as e:
+                                log.error(f"MQTT: Error rendering options for {ha_sensor.get('unique_id')}: {e}")
+                        else:
+                            config_msg['options'] = ha_sensor['options']
                     
                     # Add command_topic for writable entities (number, switch, select)
                     if sensor_type in ['number', 'select', 'button']:
@@ -163,6 +187,8 @@ class Client(object):
 
                     # Add all other variables from the YAML/config
                     for ha_variable in self.ha_variables:
+                        if ha_variable == 'options' and 'options' in config_msg:
+                            continue # Already handled and rendered above
                         if ha_sensor.get(ha_variable) is not None:
                             config_msg[ha_variable] = ha_sensor[ha_variable]
 
@@ -186,6 +212,25 @@ class Client(object):
         #log.info(f"MQTT: {len(inverter.last_scrape)} Registers Published individually")
 
         return True
+
+    def _update_dynamic_limits(self, inverter):
+        """Updates entity limits (max) based on real-time inverter metadata (e.g. rated power)"""
+        # Map: target entity unique_id (cleaned) -> limit source sensor unique_id (cleaned)
+        dynamic_map = {
+            "battery_max_charge_power": "bdc_rated_power",
+            "battery_max_discharge_power": "bdc_rated_power",
+            "battery_forced_charge_discharge_power": "bdc_rated_power",
+            "export_power_limit": "export_power_limit_max"
+        }
+        for sensor_type, sensors in self.ha_sensors.items():
+            for ha_sensor in sensors:
+                uid = ha_sensor.get('unique_id')
+                if uid in dynamic_map:
+                    limit_uid = dynamic_map[uid]
+                    limit_val = inverter.last_scrape.get(limit_uid)
+                    if limit_val is not None and isinstance(limit_val, (int, float)):
+                        ha_sensor['max'] = limit_val
+                        log.info(f"MQTT: Dynamically set max for {uid} to {limit_val}W based on {limit_uid}")
 
     def handle_writes(self, inverter):
         """
