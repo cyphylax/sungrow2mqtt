@@ -13,10 +13,10 @@ The project uses the register definitions from [mkaiser/Sungrow-SHx-Inverter-Mod
 *   **MQTT Auto Discovery**: Automatically creates matching entities in Home Assistant (Sensors, Binary).
 *   **Automatic Updates**: Downloads the latest `modbus_sungrow.yaml` from GitHub on startup, if available.
 *   **Write Access**: Control the inverter (e.g., force battery charging) via MQTT.
+*   **MQTT Auto Discovery**: Additional entities (Numbers, Button, Select, Switch).
 
 ## Planned Features
 *   **Multi-Inverter Support**: Support for multiple inverters in a single instance.
-*   **MQTT Auto Discovery**: Additional entities (Numbers, Button, Select, Switch).
 *   **Scan level**: Supports the other scan levels `BASIC` and `STANDARD`
 
 ## Installation

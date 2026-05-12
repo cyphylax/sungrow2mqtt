@@ -76,7 +76,7 @@ class Client:
         })
 
     def _to_int(self, v):
-        """Hilfsfunktion zur sicheren Konvertierung von nan_value (auch Hex-Strings)."""
+        """Helper function for safe conversion of nan_values (including hex strings)."""
         if v is None:
             return None
         if isinstance(v, int): return v
@@ -157,8 +157,8 @@ class Client:
                 if count is None:
                     count = 2 if datatype in ('uint32', 'int32') else 1
                 count = int(count)
-                # Wir fügen die volle Breite des Registers als eine Einheit hinzu.
-                # Das verhindert, dass 32-Bit Werte oder Strings zerstückelt werden.
+                # Add the full width of the register as a single unit.
+                # This prevents 32-bit values or strings from being fragmented.
                 ranges_by_type[typ].append({"start": reg_start, "end": reg_start + count - 1, "regs": [reg]})
 
         for typ, ranges in ranges_by_type.items():
@@ -374,11 +374,11 @@ class Client:
         count = int(count)
 
         if not register_type or start is None:
-            log.warning("Missing input_type or address in register")
+            log.warning("Missing input_type or address in register definition")
             return False
 
         try:
-            log.debug(f'Register laden: {register_type}, {start}:{count}')
+            log.debug(f'Loading register: {register_type}, {start}:{count}')
             if register_type == "input":
                 rr = self.client.read_input_registers(start, count=count, unit=self.client_config['slave'])
             elif register_type == "holding":
