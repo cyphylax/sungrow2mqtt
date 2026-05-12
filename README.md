@@ -50,7 +50,6 @@ Configuration is done via the "Configuration" tab in the add-on.
 **Scan**
 | Option | Description | Default |
 | :--- | :--- | :--- |
-| `level` | Scan level for registers (`STANDARD`, `BASIC`, or `FULL`). | `FULL` |
 | `interval` | Polling interval in seconds. | `30` |
 | `timeout` | Modbus connection timeout in seconds. | `5` |
 
