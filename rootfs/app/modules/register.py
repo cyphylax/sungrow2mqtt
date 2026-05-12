@@ -1,4 +1,4 @@
-import yaml
+import yaml, re
 import logging
 import requests
 log = logging.getLogger(__name__)
@@ -26,6 +26,19 @@ class SungrowRegister:
             parts.pop(0)
         return "_".join(parts)
 
+    def _clean_jinja_template(self, template):
+        if 'unavailable' in template:
+            availability = re.search(r"states\('(.+?)'\)", template)
+            if availability:
+                availability = availability.group(1)
+            return availability.split('.')[1] # type: ignore
+        else:
+            parts = template.replace("{{", "").replace("}}", "").replace(" ", "").split("|")
+            if any('bitwise_and' in p for p in parts):
+                parts.append('bool')
+            parts[0] = 'value'
+            return '{{ '+"|".join(parts)+' }}'
+    
     def __repr__(self):
         return f"<{self.__class__.__name__}(name={self.name}, uid={self.unique_id})>"
 
@@ -33,26 +46,54 @@ class ModbusEntity(SungrowRegister):
     """Class for direct Modbus registers (Sensors/Switches)"""
     def __init__(self, config_dict):
         super().__init__(config_dict)
-        self.state_unique_id = config_dict.get('state_unique_id')
         self.address = config_dict.get('address')
-        self.input_type = config_dict.get('input_type') # input / holding
-        self.write_type = config_dict.get('write_type') # input / holding
-        self.data_type = config_dict.get('data_type', 'uint16')
-        self.scale = config_dict.get('scale', 1)
+        self.data_type = config_dict.get('data_type')
         self.count = config_dict.get('count', 1)
+        self.scale = config_dict.get('scale')
+        self.offset = config_dict.get('offset', 0)
+        self.mask = config_dict.get('mask')
+        self.swap = config_dict.get('swap')
+        self.nan_value = config_dict.get('nan_value')
+        self.unit_of_measurement = config_dict.get('unit_of_measurement')
         self.precision = config_dict.get('precision', 0)
-        self.scan_interval = config_dict.get('scan_interval', 10)
-        self.command_on = config_dict.get('command_on')
-        self.command_off = config_dict.get('command_off')
-
-
+        self.scan_interval = config_dict.get('scan_interval')
+        # Sensors or Switches
+        if config_dict.get('verify'):
+            self.state_unique_id = config_dict.get('state_unique_id')
+            self.write_type = config_dict.get('write_type') # input / holding
+            self.verify = config_dict.get('verify')
+            self.command_on = config_dict.get('command_on')
+            self.command_off = config_dict.get('command_off')
+        else:
+            self.input_type = config_dict.get('input_type') # input / holding
 class TemplateEntity(SungrowRegister):
     """Class for calculated sensors (Templates)"""
     def __init__(self, config_dict):
         super().__init__(config_dict)
-        self.state = config_dict.get('state')
-        # Templates often refer to other registers
-        self.availability = config_dict.get('availability')
+        if config_dict.get('state') and config_dict.get('availability'):
+            self.state = config_dict.get('state')
+            self.availability = config_dict.get('availability')
+            self.delay_on = config_dict.get('delay_on')
+            self.delay_off = config_dict.get('delay_off')
+        if config_dict.get('sensor_type') == 'binary_sensor':
+            self.payload_on = config_dict.get('payload_on', True)
+            self.payload_off = config_dict.get('payload_off', False)
+        
+        # Extract Modbus write information from templates (number, select, button)
+        self.address = None
+        actions = config_dict.get('set_value') or config_dict.get('select_option') or config_dict.get('press')
+        if actions and isinstance(actions, list):
+            for action in actions:
+                data = action.get('data') or action.get('data_template')
+                if data and 'address' in data:
+                    self.address = data['address']
+                    self.write_template = data.get('value')
+                    # Inherit scale from sensor if available
+                    self.scale = config_dict.get('scale', 1)
+                    break
+        
+        # Store mapping for select boxes
+        self.write_map = config_dict.get('variables', {}).get('map', {})
 
 class Registers:
     def __init__(self, registerfile: str, inverter, mqtt_client):

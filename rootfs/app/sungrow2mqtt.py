@@ -18,7 +18,7 @@ def logging_setup(config):
                 self._style._fmt = self.default_format
             else:
                 self._style._fmt = self.logger_format
-                record.name = record.name.split('.')[-1]  # Nur den letzten Teil des Logger-Namens anzeigen
+                record.name = record.name.split('.')[-1]  # Show only the last part of the logger name
             return super().format(record)
         
     logs_dir = pathlib.Path(__file__).parent / 'logs' / 'sungrow2mqtt'
@@ -50,6 +50,7 @@ def poll_and_publish(inverter, export):
     export.handle_writes(inverter)
     export.status = 'online'
     inverter.poll_blocks()
+    inverter.update_templates(export.ha_sensors)
     try:
         export.mqtt_client.publish(export.config['topic'], 'online', retain=True)
     except Exception as publish_err:
