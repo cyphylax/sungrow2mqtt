@@ -42,7 +42,10 @@ class Client(object):
         self.mqtt_client.on_message = self.on_message
 
         if self.config['username'] and self.config['password']:
-            log.debug(f'{self.config["username"]}:{self.config["password"]} connecting to MQTT server...')
+            log.debug(
+                f'MQTT auth configured for user "{self.config["username"]}" '
+                f'connecting to {self.config["host"]}:{self.config["port"]}'
+            )
             self.mqtt_client.username_pw_set(self.config['username'], self.config['password'])
 
         if self.config['port'] == 8883:
