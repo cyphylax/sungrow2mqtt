@@ -158,6 +158,19 @@ class Client(object):
                     config_msg['value_template'] = "{{ value }}"
                     config_msg['unit_of_measurement'] = ha_sensor.get('unit_of_measurement')
 
+                    # Render options for select entities if they are templates
+                    if sensor_type == 'select' and ha_sensor.get('options'):
+                        opt_tmpl = ha_sensor['options']
+                        if isinstance(opt_tmpl, str) and "{{" in opt_tmpl:
+                            try:
+                                # Use variables (like 'map') from the YAML config
+                                vars = ha_sensor.get('raw_config', {}).get('variables', {})
+                                rendered = inverter.jinja_env.from_string(opt_tmpl).render(**vars)
+                                config_msg['options'] = json.loads(rendered)
+                            except Exception as e:
+                                log.error(f"MQTT: Error rendering options for {ha_sensor.get('unique_id')}: {e}")
+                        else:
+                            config_msg['options'] = ha_sensor['options']
                     
                     # Add command_topic for writable entities (number, switch, select)
                     if sensor_type in ['number', 'select', 'button']:
@@ -174,6 +187,8 @@ class Client(object):
 
                     # Add all other variables from the YAML/config
                     for ha_variable in self.ha_variables:
+                        if ha_variable == 'options' and 'options' in config_msg:
+                            continue # Already handled and rendered above
                         if ha_sensor.get(ha_variable) is not None:
                             config_msg[ha_variable] = ha_sensor[ha_variable]
 

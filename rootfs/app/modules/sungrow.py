@@ -438,6 +438,7 @@ class Client:
                     parsed_value = None
                     reg_value = raw_registers[offset]
                     if reg_value == target_nan:
+                        self.last_scrape[unique_id] = None
                         continue
                     
                     # 1. Raw Value Extraction & Type Conversion

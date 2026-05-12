@@ -19,6 +19,7 @@ class SungrowRegister:
         self.min = config_dict.get('min')
         self.max = config_dict.get('max')
         self.step = config_dict.get('step')
+        self.options = config_dict.get('options')
         
         # Keep raw data for specific logic
         self.raw_config = config_dict
@@ -77,8 +78,6 @@ class TemplateEntity(SungrowRegister):
         super().__init__(config_dict)
         if config_dict.get('state'):
             self.state = config_dict.get('state')
-        if config_dict.get('availability'):
-            self.availability = config_dict.get('availability')
         self.delay_on = config_dict.get('delay_on')
         self.delay_off = config_dict.get('delay_off')
         if config_dict.get('sensor_type') == 'binary_sensor':
