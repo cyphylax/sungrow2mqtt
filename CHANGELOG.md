@@ -3,9 +3,20 @@
 # Sungrow2MQTT Home Assistant Add-on
 
 ## Changelog
+###
+### [1.2.0] - 2026-08-**
+#### Fixed
+- **Update Registerfile**: The `modbus_sungrow.yaml` dosent load corectly from https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant/blob/main/modbus_sungrow.yaml
+
+#### Added
+- **Scan Interval**: Added Suport for configureable entities (Issue #6)
+
+#### Changed
+- Update Documentation with the Scan Interval Parameters (README.md)
+
 ### [1.1.2] - 2026-05-12
 #### Fixed
-- **Template Processing**: Fixed an issue where templates were skipped due to empty address fields.
+- **Template Processing**:  Fixed an issue where templates were skipped due to empty address fields.
 - **ID Collisions**: Ensured unique IDs in Home Assistant by including the domain (sensor, number, etc.) in the unique_id.
 - **Binary Sensors**: Corrected standard payloads to `ON`/`OFF` and improved truthiness detection for templates.
 - **UI Limits**: Fixed an issue where sliders (numbers) were incorrectly limited to 0-100.

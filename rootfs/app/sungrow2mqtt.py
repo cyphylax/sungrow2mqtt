@@ -1,6 +1,5 @@
 import logging, logging.handlers
-import time, pathlib, importlib, json
-from datetime import datetime
+import time, pathlib, importlib, json, requests
 
 from modules.version import __version__
 
@@ -49,7 +48,19 @@ def logging_setup(config):
     logging.getLogger('modules.config_parser').setLevel(log_level)
     logging.info(f'Logging initialized. Level: {config.get("log_level", "INFO")}')
 
-
+def update_register_file(local_register_file):
+    remote_register_file_url = r"https://raw.githubusercontent.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant/refs/heads/main/modbus_sungrow.yaml"
+    response = requests.get(remote_register_file_url)
+    lines = response.text.splitlines()
+    with open(local_register_file, 'r') as f:
+        local = f.read().splitlines()
+    if local[0] != lines[0]:
+        with open(local_register_file, 'w') as f:
+            f.write(response.text)
+        logging.info(f'New Update availabel and update register-file')
+    else:
+        logging.info(f'No Upate availiabel for register-file continue')
+        
 def poll_and_publish(inverter, export):
     '''Poll Modbus blocks and publish the latest register snapshot.'''
     # First, handle any pending write commands from MQTT
@@ -80,18 +91,17 @@ def main_loop(inverter, export):
     while True:
         try:
             poll_and_publish(inverter, export)
-            # Small sleep to prevent CPU pinning when no registers need polling
-            time.sleep(1)
         except Exception as e:
             handle_error(inverter, export, e)
 
 ### Main Program Execution ###
 if __name__ == '__main__':
+    register_path = pathlib.Path(__file__).parent / 'config' / registeryml
     sungrow = importlib.import_module('modules.sungrow')
     modbus = importlib.import_module('modules.register')
     mqtt = importlib.import_module('modules.mqtt')
 
-    register_path = pathlib.Path(__file__).parent / 'config' / registeryml
+    
     config_path = pathlib.Path('/data/options.json')
     
     if not register_path.exists():
@@ -114,6 +124,7 @@ if __name__ == '__main__':
     logging.info(f'Loading configuration and initializing clients...')
     inverter = sungrow.Client(config)
     export = mqtt.Client()
+    update_register_file(register_path)
     register = modbus.Registers(register_path, inverter, export)
     register.configure()
     inverter.configure_inverter()

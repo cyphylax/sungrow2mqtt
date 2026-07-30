@@ -50,8 +50,13 @@ Configuration is done via the "Configuration" tab in the add-on.
 **Scan**
 | Option | Description | Default |
 | :--- | :--- | :--- |
-| `interval` | Polling interval in seconds. | `30` |
-| `timeout` | Modbus connection timeout in seconds. | `5` |
+| `delay` | Delay second after connecting | `5` |
+| `timeout` | Timeout while waiting for a response before flodding the log with errors. | `30` |
+| `interval` |||
+| `realtime` | Scan interval for: | `5` |
+| `fast`| Scan interval for: | `10` |
+| `medium`| Scan interval for: | `60` |
+| `slowest`| Scan interval for: | `600` |
 
 **General**
 | Option | Description | Default |
