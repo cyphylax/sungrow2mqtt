@@ -22,8 +22,8 @@ options:
     password: ""
     homeassistant: true
   scan:
-    delay: 30
-    timeout: 5
+    delay: 5
+    timeout: 30
     interval:
       realtime: 5
       fast: 10
@@ -43,8 +43,8 @@ schema:
     password: password
     homeassistant: bool
   scan:
-    delay: int(30,60)
-    timeout: int(5,60)
+    delay: int(1,15)
+    timeout: int(10,60)
     interval:
       realtime: int(1,5)
       fast: int(1,10)
