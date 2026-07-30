@@ -177,13 +177,13 @@ class Registers:
 
                 if 'scan_interval' in sensor_cfg:
                     if sensor_cfg['scan_interval'] == 5:
-                        sensor_cfg['scan_interval'] = self.inverter['scan_interval']['realtime']
+                        sensor_cfg['scan_interval'] = self.inverter.scan_interval['realtime']
                     if sensor_cfg['scan_interval'] == 10:
-                        sensor_cfg['scan_interval'] = self.inverter['scan_interval']['fast']
+                        sensor_cfg['scan_interval'] = self.inverter.scan_interval['fast']
                     if sensor_cfg['scan_interval'] == 60:
-                        sensor_cfg['scan_interval'] = self.inverter['scan_interval']['medium']
+                        sensor_cfg['scan_interval'] = self.inverter.scan_interval['medium']
                     if sensor_cfg['scan_interval'] == 600:
-                        sensor_cfg['scan_interval'] = self.inverter['scan_interval']['slowest']
+                        sensor_cfg['scan_interval'] = self.inverter.scan_interval['slowest']
                 
                 # Assignment to HA Discovery list
                 if sensor_type in ha_sensor_lists:
