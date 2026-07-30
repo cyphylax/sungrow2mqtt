@@ -2,8 +2,6 @@ import yaml, re
 import logging
 import requests
 log = logging.getLogger(__name__)
-registeryml_remote = "https://raw.githubusercontent.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant/refs/heads/main/modbus_sungrow.yaml"
-
 
 class SungrowRegister:
     """Base class for all entries from modbus_sungrow.yaml"""
@@ -177,12 +175,23 @@ class Registers:
                 else:
                     instance = TemplateEntity(sensor_cfg)
 
+                if 'scan_interval' in sensor_cfg:
+                    if sensor_cfg['scan_interval'] == 5:
+                        sensor_cfg['scan_interval'] = self.inverter['scan_interval']['realtime']
+                    if sensor_cfg['scan_interval'] == 10:
+                        sensor_cfg['scan_interval'] = self.inverter['scan_interval']['fast']
+                    if sensor_cfg['scan_interval'] == 60:
+                        sensor_cfg['scan_interval'] = self.inverter['scan_interval']['medium']
+                    if sensor_cfg['scan_interval'] == 600:
+                        sensor_cfg['scan_interval'] = self.inverter['scan_interval']['slowest']
+                
                 # Assignment to HA Discovery list
                 if sensor_type in ha_sensor_lists:
                     ha_sensor_lists[sensor_type].append(instance.__dict__)
 
                 if sensor_type in modbus_sensor_lists:
                     modbus_sensor_lists[sensor_type].append(instance.__dict__)
+
         
         # Pass to subsystems
         self.inverter.registers = modbus_sensor_lists

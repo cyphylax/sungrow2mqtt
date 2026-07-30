@@ -1,4 +1,4 @@
-# Release date 2026-04-27
+# Release date 2026-06-19
 #
 # INSTALLATION GUIDE: https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant/blob/main/doc/installation.md
 #
@@ -330,8 +330,6 @@ modbus:
         input_type: input
         data_type: int16
         precision: 3
-        unit_of_measurement: "%"
-        device_class: power_factor
         state_class: measurement
         scale: 0.001
         scan_interval: *scan_interval_fast
@@ -1355,12 +1353,14 @@ modbus:
         scan_interval: *scan_interval_fast
 
       # undocumented sensor (reverse engineered by some guys of photovoltaikforum.com and forum.iobroker.net )
+      # not available on SHxRS as per https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant/issues/743
       - name: Battery charging start power
         unique_id: sg_battery_charging_start_power
         device_address: !secret sungrow_modbus_device_address
         address: &sg_reg_battery_charging_start_power 33148 # reg 33149
         input_type: holding
         data_type: uint16
+        nan_value: 0xFFFF
         unit_of_measurement: W
         device_class: power
         state_class: measurement
@@ -1368,12 +1368,14 @@ modbus:
         scan_interval: *scan_interval_fast
 
       # undocumented sensor (reverse engineered by some guys of photovoltaikforum.com and forum.iobroker.net )
+      # not available on SHxRS as per https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant/issues/743
       - name: Battery discharging start power
         unique_id: sg_battery_discharging_start_power
         device_address: !secret sungrow_modbus_device_address
         address: &sg_reg_battery_discharging_start_power 33149 # reg 33150
         input_type: holding
         data_type: uint16
+        nan_value: 0xFFFF
         precision: 0
         unit_of_measurement: W
         device_class: power
@@ -2372,7 +2374,7 @@ scene:
 
   - name: Max Export Power
     entities:
-      switch.export_power_limit: "off"
+      switch.export_power_limit: "on"
       # scripts don't render templates :/
       # number.export_power_limit is set by an automation
 

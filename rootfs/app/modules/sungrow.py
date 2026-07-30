@@ -13,12 +13,18 @@ class Client:
         self.client_config = {
             "host": config['inverter'].get('host'),
             "port": config['inverter'].get('port'),
-            "timeout": config['scan'].get('timeout', 5), 
+            "timeout": config['scan'].get('timeout', 30), 
             "retries": config['scan'].get("retries", 3),
-            "scan_interval": config['scan'].get("scan_interval", 10),
+            "delay": config['scan'].get("delay", 5),
             "winet_connection": config['inverter'].get('winet_connection'),
             "slave": config['inverter'].get('slave', 1),
             "RetryOnEmpty": False
+        }
+        self.scan_interval={
+            "realtime": config['scan']['interval'].get("realtime", 5),
+            "fast": config['scan']['interval'].get("fast", 10),
+            "medium": config['scan']['interval'].get("medium", 60),
+            "slowest": config['scan']['interval'].get("slowest", 600)
         }
         self.inverter_config = {}
         self.client = None

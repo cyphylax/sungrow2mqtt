@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: sungrow2mqtt
-version: "1.1.2"
+version: "1.2.0"
 slug: sungrow2mqtt
 description: This add-on integrates Sungrow SHx inverters into Home Assistant via Modbus TCP using MQTT. It reads register data and automatically provides them as sensors and other entities.
 arch:
@@ -22,8 +22,13 @@ options:
     password: ""
     homeassistant: true
   scan:
-    interval: 30
+    delay: 30
     timeout: 5
+    interval:
+      realtime: 5
+      fast: 10
+      medium: 60
+      slowest: 600
   log_level: "INFO"
 schema:
   inverter:
@@ -38,6 +43,11 @@ schema:
     password: password
     homeassistant: bool
   scan:
-    interval: int(10,600)
-    timeout: int(3,60)
+    delay: int(30,60)
+    timeout: int(5,60)
+    interval:
+      realtime: int(1,5)
+      fast: int(1,10)
+      medium: int(30,60)
+      slowest: int(100,600)
   log_level: "list(INFO|WARNING|ERROR|DEBUG)"
