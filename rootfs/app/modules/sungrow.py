@@ -3,11 +3,11 @@ import re
 import json
 import ast
 import jinja2
+import time
 from datetime import datetime, timedelta
 from modules import register
 from pymodbus.client.sync import ModbusTcpClient
 log = logging.getLogger(__name__)
-
 class Client:
     def __init__(self, config):
         self.client_config = {
@@ -26,13 +26,13 @@ class Client:
             "medium": config['scan']['interval'].get("medium", 60),
             "slowest": config['scan']['interval'].get("slowest", 600)
         }
-        self.inverter_config = {}
         self.client = None
         self.serial_number = None
         self.model = None
+        self.inverter_config = {}
         self.registers = {}
         self.address_lookup = {}
-        self.read_blocks = {"input": [], "holding": []}
+        self.read_blocks = {}
         self.last_scrape = {}
         self.template_tracking = {}
         self.name_to_uid = {}
@@ -148,53 +148,87 @@ class Client:
             raise
         log.info(f'Inverter configured successfully. Model: {self.model}, Serial Number: {self.serial_number}')
 
-    def _build_read_blocks(self, max_count=125):
-        """Build contiguous Modbus read blocks from the register lookup."""
+    def _build_read_blocks(self, max_count=125, current_time=None):
+        """Build contiguous Modbus read blocks from the register lookup for due registers."""
+        if current_time is None:
+            current_time = time.time()
+
         ranges_by_type = {"input": [], "holding": []}
 
+        # 1. Collect all registers that are due for polling
         for (addr, typ), regs in self.address_lookup.items():
             if typ not in ranges_by_type:
                 continue
+            
             for reg in regs:
-                reg_start = int(reg.get('address', addr))
-                datatype = reg.get('data_type', 'uint16')
-                # Determine the number of registers needed based on count or data type
-                count = reg.get('count')
-                if count is None:
-                    count = 2 if datatype in ('uint32', 'int32') else 1
-                count = int(count)
-                # Add the full width of the register as a single unit.
-                # This prevents 32-bit values or strings from being fragmented.
-                ranges_by_type[typ].append({"start": reg_start, "end": reg_start + count - 1, "regs": [reg]})
+                last_scrape = reg.get('last_scrape', 0)
+                scan_interval = reg.get('scan_interval', 30)
+
+                # Check if this register is due for a refresh
+                if current_time - last_scrape >= scan_interval:
+                    reg_start = int(reg.get('address', addr))
+                    datatype = reg.get('data_type', 'uint16')
+                    
+                    count = reg.get('count')
+                    if count is None:
+                        count = 2 if datatype in ('uint32', 'int32', 'float32') else 1
+                    count = int(count)
+
+                    ranges_by_type[typ].append({
+                        "start": reg_start, 
+                        "end": reg_start + count - 1, 
+                        "regs": [reg]
+                    })
+
+        # 2. Merge overlapping or adjacent register ranges into blocks
+        self.read_blocks = {"input": [], "holding": []}
 
         for typ, ranges in ranges_by_type.items():
+            if not ranges:
+                continue
+
             ranges.sort(key=lambda item: item["start"])
             merged = []
             current = None
+
             for item in ranges:
                 if current is None:
-                    current = {"start": item["start"], "end": item["end"], "regs": item["regs"][:]}
+                    current = {
+                        "start": item["start"], 
+                        "end": item["end"], 
+                        "regs": item["regs"][:]
+                    }
                     continue
-                if item["start"] <= current["end"] + 1 and item["end"] - current["start"] + 1 <= max_count:
-                    current["end"] = max(current["end"], item["end"])
+
+                # Calculate total block length if we include the new item
+                potential_end = max(current["end"], item["end"])
+                potential_count = potential_end - current["start"] + 1
+
+                # Merge if adjacent/overlapping AND within max_count limit
+                # (Allows max gap of 1 register: item["start"] <= current["end"] + 2)
+                if item["start"] <= current["end"] + 1 and potential_count <= max_count:
+                    current["end"] = potential_end
                     current["regs"].extend(item["regs"])
                 else:
-                    merged.append({"start": current["start"], "count": current["end"] - current["start"] + 1, "regs": current["regs"]})
-                    current = {"start": item["start"], "end": item["end"], "regs": item["regs"][:]}
-            if current is not None:
-                merged.append({"start": current["start"], "count": current["end"] - current["start"] + 1, "regs": current["regs"]})
-            self.read_blocks[typ] = merged
+                    merged.append({
+                        "start": current["start"], 
+                        "count": current["end"] - current["start"] + 1, 
+                        "regs": current["regs"]
+                    })
+                    current = {
+                        "start": item["start"], 
+                        "end": item["end"], 
+                        "regs": item["regs"][:]
+                    }
 
-    def _block_needs_read(self, block):
-        now = datetime.now()
-        for reg in block["regs"]:
-            scan_interval = int(reg.get('scan_interval', self.client_config.get('scan_interval', 10)) or 10)
-            last = reg.get('last_scrape')
-            if not isinstance(last, datetime):
-                return True
-            if now - last > timedelta(seconds=scan_interval):
-                return True
-        return False
+            if current is not None:
+                merged.append({
+                    "start": current["start"], 
+                    "count": current["end"] - current["start"] + 1, 
+                    "regs": current["regs"]
+                })
+
+            self.read_blocks[typ] = merged    
 
     def update_templates(self, ha_sensors):
         """
@@ -259,15 +293,15 @@ class Client:
                 except Exception as e:
                     log.debug(f"Error in template {uid}: {e}")
 
-    def poll_blocks(self):
+    def poll_blocks(self, current_time):
         """Poll each Modbus block once if any register inside the block is due."""
+        self._build_read_blocks(current_time)
         for register_type, blocks in self.read_blocks.items():
             for block in blocks:
-                if self._block_needs_read(block):
-                    if self.load_register_block(register_type, block['start'], block['count'], block['regs']):
-                        now = datetime.now()
-                        for reg in block['regs']:
-                            reg['last_scrape'] = now
+                if self.load_register_block(register_type, block['start'], block['count'], block['regs']):
+                    now = datetime.now()
+                    for reg in block['regs']:
+                        reg['last_scrape'] = current_time
 
     def validateRegister(self, unique_id):
         """Validates if a register unique_id is defined in the address lookup."""
@@ -612,3 +646,4 @@ class Client:
 
     def __del__(self):
         self.close()
+

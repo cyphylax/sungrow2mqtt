@@ -61,12 +61,13 @@ def update_register_file(local_register_file):
     else:
         logging.info(f'No Upate availiabel for register-file continue')
         
-def poll_and_publish(inverter, export):
+def poll_and_publish(inverter, export, current_time):
+
     '''Poll Modbus blocks and publish the latest register snapshot.'''
     # First, handle any pending write commands from MQTT
     export.handle_writes(inverter)
     export.status = 'online'
-    inverter.poll_blocks()
+    inverter.poll_blocks(current_time)
     inverter.update_templates(export.ha_sensors)
     try:
         export.mqtt_client.publish(export.config['topic'], 'online', retain=True)
@@ -89,8 +90,9 @@ def main_loop(inverter, export):
     '''Main loop for data collection and publishing.'''
     logging.info('Main loop started. Starting data collection and publishing...')
     while True:
+        now = time.time()
         try:
-            poll_and_publish(inverter, export)
+            poll_and_publish(inverter, export, now)
         except Exception as e:
             handle_error(inverter, export, e)
 
