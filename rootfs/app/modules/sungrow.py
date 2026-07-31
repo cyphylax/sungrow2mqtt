@@ -127,6 +127,7 @@ class Client:
             raise
 
         self._build_read_blocks()
+        self._log_polling_plan()
 
         log.info(f"Configuring Modbus TCP client for {self.client_config['host']}:{self.client_config['port']}")
         self.client = ModbusTcpClient(
@@ -149,6 +150,29 @@ class Client:
             log.error(f"Error reading initial register values: {e}")
             raise
         log.info(f'Inverter configured successfully. Model: {self.model}, Serial Number: {self.serial_number}')
+
+    def _log_polling_plan(self):
+        """
+        Loggt EINMALIG (beim Start bzw. Reconfigure) welche Register in welchen
+        Bloecken mit welchem Intervall abgefragt werden. Bewusst NICHT aus
+        poll_blocks()/_build_read_blocks() heraus aufgerufen, da diese bei jedem
+        Zyklus laufen - so entsteht keine laufende Log-Last im Normalbetrieb.
+        """
+        total_blocks = 0
+        total_regs = 0
+        for register_type, blocks in self.read_blocks.items():
+            for block in blocks:
+                total_blocks += 1
+                total_regs += len(block['regs'])
+                names = [r.get('unique_id') or r.get('name', '?') for r in block['regs']]
+                intervals = sorted(set(r.get('scan_interval', '?') for r in block['regs']))
+                interval_str = f"{intervals[0]}s" if len(intervals) == 1 else f"GEMISCHT {intervals}s"
+                end = block['start'] + block['count'] - 1
+                log.info(
+                    f"Poll-Plan [{register_type}] {block['start']}-{end} "
+                    f"({block['count']} Reg, Intervall {interval_str}): {', '.join(names)}"
+                )
+        log.info(f"Poll-Plan: {total_blocks} Bloecke, {total_regs} Register insgesamt konfiguriert.")
 
     def _build_read_blocks(self, max_count=125, current_time=None):
         """Build contiguous Modbus read blocks from the register lookup for due registers."""
@@ -328,7 +352,11 @@ class Client:
             return False
 
         try:
-            log.debug(f'Block read: {register_type}, {start}:{count}')
+            if block_regs:
+                reg_names = ", ".join(r.get('unique_id') or r.get('name', '?') for r in block_regs)
+                log.debug(f'Block read: {register_type} {start}:{count} [{reg_names}]')
+            else:
+                log.debug(f'Block read: {register_type}, {start}:{count}')
             if register_type == "input":
                 rr = self.client.read_input_registers(start, count=count, unit=self.client_config['slave'])
             elif register_type == "holding":
