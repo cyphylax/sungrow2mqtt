@@ -16,15 +16,17 @@ class Client:
             "timeout": config['scan'].get('timeout', 30), 
             "retries": config['scan'].get("retries", 3),
             "delay": config['scan'].get("delay", 5),
+            "message_wait": config['scan'].get("message_wait", 0.1),  # Sekunden
             "winet_connection": config['inverter'].get('winet_connection'),
             "slave": config['inverter'].get('slave', 1),
             "RetryOnEmpty": False
         }
-        self.scan_interval={
-            "realtime": config['scan']['interval'].get("realtime", 5),
-            "fast": config['scan']['interval'].get("fast", 10),
-            "medium": config['scan']['interval'].get("medium", 60),
-            "slowest": config['scan']['interval'].get("slowest", 600)
+        interval_cfg = config.get('scan', {}).get('interval', {})
+        self.scan_interval = {
+            "realtime": interval_cfg.get("realtime", 5),
+            "fast": interval_cfg.get("fast", 10),
+            "medium": interval_cfg.get("medium", 60),
+            "slowest": interval_cfg.get("slowest", 600)
         }
         self.client = None
         self.serial_number = None
@@ -295,13 +297,15 @@ class Client:
 
     def poll_blocks(self, current_time):
         """Poll each Modbus block once if any register inside the block is due."""
-        self._build_read_blocks(current_time)
+        self._build_read_blocks(current_time=current_time)
+        wait_seconds = self.client_config.get('message_wait', 0.1)
         for register_type, blocks in self.read_blocks.items():
             for block in blocks:
                 if self.load_register_block(register_type, block['start'], block['count'], block['regs']):
-                    now = datetime.now()
                     for reg in block['regs']:
                         reg['last_scrape'] = current_time
+                    if wait_seconds > 0:
+                        time.sleep(wait_seconds)
 
     def validateRegister(self, unique_id):
         """Validates if a register unique_id is defined in the address lookup."""

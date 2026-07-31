@@ -89,12 +89,17 @@ def handle_error(inverter, export, error):
 def main_loop(inverter, export):
     '''Main loop for data collection and publishing.'''
     logging.info('Main loop started. Starting data collection and publishing...')
+    # Vermeidet Busy-Looping mit voller CPU-Last, wenn gerade kein Register fällig ist.
+    # 0.1s ist deutlich kleiner als das kleinste sinnvolle scan_interval (>= 1s),
+    # sodass keine relevante zusätzliche Latenz entsteht.
+    loop_idle_sleep = 0.1
     while True:
         now = time.time()
         try:
             poll_and_publish(inverter, export, now)
         except Exception as e:
             handle_error(inverter, export, e)
+        time.sleep(loop_idle_sleep)
 
 ### Main Program Execution ###
 if __name__ == '__main__':
