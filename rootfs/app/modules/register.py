@@ -163,11 +163,17 @@ class Registers:
                 sensor_cfg['sensor_type'] = sensor_type
                 
                 if 'verify' in sensor_cfg:
+                    target_type = sensor_cfg.get('write_type')
+                    found = False
                     for type in modbus_sensor_lists.keys():
                         for verify_sensor in modbus_sensor_lists[type]:
-                            if verify_sensor['address'] == sensor_cfg['address']:
+                            if (verify_sensor.get('address') == sensor_cfg.get('address')
+                                    and verify_sensor.get('input_type') == target_type):
                                 sensor_cfg['state_unique_id'] = verify_sensor['unique_id']
+                                found = True
                                 break
+                        if found:
+                            break
                 
                 # Instantiation based on content
                 if 'address' in sensor_cfg:
@@ -178,11 +184,11 @@ class Registers:
                 if 'scan_interval' in sensor_cfg:
                     if sensor_cfg['scan_interval'] == 5:
                         sensor_cfg['scan_interval'] = self.inverter.scan_interval['realtime']
-                    if sensor_cfg['scan_interval'] == 10:
+                    elif sensor_cfg['scan_interval'] == 10:
                         sensor_cfg['scan_interval'] = self.inverter.scan_interval['fast']
-                    if sensor_cfg['scan_interval'] == 60:
+                    elif sensor_cfg['scan_interval'] == 60:
                         sensor_cfg['scan_interval'] = self.inverter.scan_interval['medium']
-                    if sensor_cfg['scan_interval'] == 600:
+                    elif sensor_cfg['scan_interval'] == 600:
                         sensor_cfg['scan_interval'] = self.inverter.scan_interval['slowest']
                 
                 # Assignment to HA Discovery list
@@ -218,7 +224,11 @@ class Registers:
         # Mapping special keys from modbus_sungrow.yaml
         special_keys = {
             "host_ip": lambda: self.inverter.client_config.get("host"),
-            "wait_milliseconds": lambda: self.inverter.client_config.get("timeout", 5) * 100,
+            # Einzige Stelle mit ms-Umrechnung: das YAML-Zielfeld heißt
+            # "message_wait_milliseconds" (Vorgabe des ursprünglichen HA-Modbus-Schemas)
+            # und erwartet zwingend Millisekunden, waehrend intern (client_config)
+            # alles in Sekunden gefuehrt wird.
+            "wait_milliseconds": lambda: self.inverter.client_config.get("message_wait", 0.1) * 1000,
             "device_address": lambda: self.inverter.client_config.get("slave"),
             "battery_max_power": lambda: self.inverter.inverter_config.get("battery_max_power", 7000),
             "battery_max_charge_power": lambda: self.inverter.inverter_config.get("battery_max_charge_power", 7600),
