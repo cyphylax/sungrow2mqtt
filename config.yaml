@@ -7,8 +7,6 @@ arch:
   - aarch64
   - amd64
 init: false
-map:
-  - share:rw
 options:
   inverter:
     host: ""
@@ -24,6 +22,8 @@ options:
   scan:
     delay: 5
     timeout: 30
+    retries: 3
+    level: "FULL"
     interval:
       realtime: 5
       fast: 10
@@ -45,6 +45,8 @@ schema:
   scan:
     delay: int(1,15)
     timeout: int(10,60)
+    retries: int(0,10)
+    level: "list(BASIC|STANDARD|FULL)"
     interval:
       realtime: int(1,5)
       fast: int(1,10)
