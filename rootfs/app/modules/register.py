@@ -1,11 +1,11 @@
-import yaml, re
+import yaml, re, pathlib
 import logging
-import requests
+from typing import Any, Optional
 log = logging.getLogger(__name__)
 
 class SungrowRegister:
     """Base class for all entries from modbus_sungrow.yaml"""
-    def __init__(self, config_dict):
+    def __init__(self, config_dict: dict):
         self.name = config_dict.get('name')
         self.unique_id = self._clean_unique_id(config_dict.get('unique_id', ''))
         self.sensor_type = config_dict.get('sensor_type') # sensor, binary_sensor, switch, etc.
@@ -22,14 +22,14 @@ class SungrowRegister:
         # Keep raw data for specific logic
         self.raw_config = config_dict
 
-    def _clean_unique_id(self, uid):
+    def _clean_unique_id(self, uid: str) -> str:
         """Removes prefixes like sg_ or uid_ to match HA entity naming conventions"""
         parts = uid.split("_")
         while parts and parts[0] in ["sg", "uid"]:
             parts.pop(0)
         return "_".join(parts)
 
-    def _clean_jinja_template(self, template):
+    def _clean_jinja_template(self, template: str) -> str:
         if 'unavailable' in template:
             match = re.search(r"states\('(.+?)'\)", template)
             if match:
@@ -43,12 +43,12 @@ class SungrowRegister:
             parts[0] = 'value'
             return '{{ '+"|".join(parts)+' }}'
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(name={self.name}, uid={self.unique_id})>"
 
 class ModbusEntity(SungrowRegister):
     """Class for direct Modbus registers (Sensors/Switches)"""
-    def __init__(self, config_dict):
+    def __init__(self, config_dict: dict):
         super().__init__(config_dict)
         self.address = config_dict.get('address')
         self.data_type = config_dict.get('data_type')
@@ -72,7 +72,7 @@ class ModbusEntity(SungrowRegister):
             self.input_type = config_dict.get('input_type') # input / holding
 class TemplateEntity(SungrowRegister):
     """Class for calculated sensors (Templates)"""
-    def __init__(self, config_dict):
+    def __init__(self, config_dict: dict):
         super().__init__(config_dict)
         if config_dict.get('state'):
             self.state = config_dict.get('state')
@@ -99,7 +99,7 @@ class TemplateEntity(SungrowRegister):
         self.write_map = config_dict.get('variables', {}).get('map', {})
 
 class Registers:
-    def __init__(self, registerfile: str, inverter, mqtt_client):
+    def __init__(self, registerfile: str, inverter: Any, mqtt_client: Any):
         self.inverter = inverter
         self.mqtt_client = mqtt_client
         self.registerfile_path = registerfile
@@ -108,8 +108,9 @@ class Registers:
         # Register YAML constructor for !secret
         yaml.add_constructor('!secret', self.secret_constructor)
         self.load_registerfile()
+        self.load_scan_levels()
 
-    def load_registerfile(self):
+    def load_registerfile(self) -> None:
         """Loads the local YAML file."""
         try:
             with open(self.registerfile_path, 'r', encoding='utf-8') as f:
@@ -119,7 +120,36 @@ class Registers:
             log.error(f"Error loading register file: {e}")
             self.registerfile = {}
 
-    def configure(self):
+    def load_scan_levels(self) -> None:
+        """
+        Loads the local (never auto-updated) scan-level tier definitions used to
+        reduce the number of polled Modbus sensors on BASIC/STANDARD levels.
+        """
+        self.scan_level_basic = set()
+        self.scan_level_standard = set()
+        self.scan_level_essential = set()
+        try:
+            levels_path = pathlib.Path(self.registerfile_path).parent / 'scan_levels.yaml'
+            with open(levels_path, 'r', encoding='utf-8') as f:
+                levels = yaml.safe_load(f) or {}
+            self.scan_level_basic = set(levels.get('basic') or [])
+            self.scan_level_standard = set(levels.get('standard') or [])
+            self.scan_level_essential = set(levels.get('essential') or [])
+        except Exception as e:
+            log.warning(f"Could not load scan_levels.yaml, scan.level filtering disabled: {e}")
+
+    def _is_included_at_scan_level(self, unique_id: str) -> bool:
+        """Whether a plain Modbus sensor should be polled at the configured scan.level."""
+        level = getattr(self.inverter, 'scan_level', 'FULL')
+        if level == 'FULL' or unique_id in self.scan_level_essential:
+            return True
+        if level == 'BASIC':
+            return unique_id in self.scan_level_basic
+        if level == 'STANDARD':
+            return unique_id in self.scan_level_basic or unique_id in self.scan_level_standard
+        return True
+
+    def configure(self) -> None:
         """
         Generates two lists:
         1. modbus_sensor_lists: For the inverter to poll (input/holding)
@@ -153,6 +183,8 @@ class Registers:
         if not self.registerfile:
             return
 
+        skipped_by_level = 0
+
         for path, sensor_type, target_type in mappings:
             sensors = self._get_from_path(self.registerfile, path)
             if sensors is None:
@@ -175,12 +207,8 @@ class Registers:
                         if found:
                             break
                 
-                # Instantiation based on content
-                if 'address' in sensor_cfg:
-                    instance = ModbusEntity(sensor_cfg)
-                else:
-                    instance = TemplateEntity(sensor_cfg)
-
+                # Apply the configured scan intervals BEFORE instantiation, so the
+                # entity picks up the mapped value instead of the raw YAML literal.
                 if 'scan_interval' in sensor_cfg:
                     if sensor_cfg['scan_interval'] == 5:
                         sensor_cfg['scan_interval'] = self.inverter.scan_interval['realtime']
@@ -190,7 +218,20 @@ class Registers:
                         sensor_cfg['scan_interval'] = self.inverter.scan_interval['medium']
                     elif sensor_cfg['scan_interval'] == 600:
                         sensor_cfg['scan_interval'] = self.inverter.scan_interval['slowest']
-                
+
+                # Instantiation based on content
+                if 'address' in sensor_cfg:
+                    instance = ModbusEntity(sensor_cfg)
+                else:
+                    instance = TemplateEntity(sensor_cfg)
+
+                # scan.level only trims plain Modbus sensors (the bulk of the polling
+                # load). Switches and template/control entities are never filtered.
+                is_modbus_sensor = path[0] == 'modbus' and sensor_type == 'sensor'
+                if is_modbus_sensor and not self._is_included_at_scan_level(instance.unique_id):
+                    skipped_by_level += 1
+                    continue
+
                 # Assignment to HA Discovery list
                 if sensor_type in ha_sensor_lists:
                     ha_sensor_lists[sensor_type].append(instance.__dict__)
@@ -203,7 +244,15 @@ class Registers:
         self.inverter.registers = modbus_sensor_lists
         self.mqtt_client.ha_sensors = ha_sensor_lists
 
-    def _get_from_path(self, data, path):
+        modbus_total = sum(len(v) for v in modbus_sensor_lists.values())
+        ha_total = sum(len(v) for v in ha_sensor_lists.values())
+        level_note = f", {skipped_by_level} sensor(s) skipped by scan.level" if skipped_by_level else ""
+        log.info(
+            f"Register configuration loaded: {modbus_total} Modbus entries, {ha_total} HA entities "
+            f"(scan level: {self.inverter.scan_level}{level_note})."
+        )
+
+    def _get_from_path(self, data: dict, path: list) -> Optional[Any]:
         """Helper method to navigate through the YAML structure."""
         try:
             for key in path:
@@ -212,7 +261,7 @@ class Registers:
         except (KeyError, IndexError, TypeError):
             return None
 
-    def secret_constructor(self, loader, node):
+    def secret_constructor(self, loader: yaml.Loader, node: yaml.Node) -> Any:
         """
         Constructor for !secret in YAML.
         Replaces placeholders with values from the inverter configuration.
@@ -224,10 +273,10 @@ class Registers:
         # Mapping special keys from modbus_sungrow.yaml
         special_keys = {
             "host_ip": lambda: self.inverter.client_config.get("host"),
-            # Einzige Stelle mit ms-Umrechnung: das YAML-Zielfeld heißt
-            # "message_wait_milliseconds" (Vorgabe des ursprünglichen HA-Modbus-Schemas)
-            # und erwartet zwingend Millisekunden, waehrend intern (client_config)
-            # alles in Sekunden gefuehrt wird.
+            # Only place with a ms conversion: the YAML target field is called
+            # "message_wait_milliseconds" (dictated by the original HA Modbus
+            # schema) and always expects milliseconds, while internally
+            # (client_config) everything is tracked in seconds.
             "wait_milliseconds": lambda: self.inverter.client_config.get("message_wait", 0.1) * 1000,
             "device_address": lambda: self.inverter.client_config.get("slave"),
             "battery_max_power": lambda: self.inverter.inverter_config.get("battery_max_power", 7000),
