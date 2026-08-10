@@ -24,7 +24,7 @@ jobs:
             requirements-dev.txt
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -r rootfs/app/requirements.txt -r requirements-dev.txt
 
       - name: Lint (ruff - unused imports, undefined names, syntax errors)
         run: ruff check .
