@@ -3,5 +3,5 @@
 # directories, which caused it to re-report every runtime dependency bump
 # from rootfs/app/requirements.txt here too, opening duplicate PRs. Install
 # both files explicitly instead - see README.md's Development section.
-pytest==8.3.5
+pytest==9.1.1
 ruff==0.9.6
