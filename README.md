@@ -10,14 +10,13 @@ The project uses the register definitions from [mkaiser/Sungrow-SHx-Inverter-Mod
 
 ## Features
 *   **Modbus TCP Interface**: Direct communication with the inverter (recommended via WiNet-S dongle or LAN port).
-*   **MQTT Auto Discovery**: Automatically creates matching entities in Home Assistant (Sensors, Binary).
+*   **MQTT Auto Discovery**: Automatically creates matching entities in Home Assistant (Sensors, Binary Sensors, Numbers, Buttons, Selects, Switches).
 *   **Automatic Updates**: Downloads the latest `modbus_sungrow.yaml` from GitHub on startup, if available.
 *   **Write Access**: Control the inverter (e.g., force battery charging) via MQTT.
-*   **MQTT Auto Discovery**: Additional entities (Numbers, Button, Select, Switch).
+*   **Scan Level**: Reduce Modbus polling load by choosing `BASIC`, `STANDARD` or `FULL` (all registers).
 
 ## Planned Features
 *   **Multi-Inverter Support**: Support for multiple inverters in a single instance.
-*   **Scan level**: Supports the other scan levels `BASIC` and `STANDARD`
 
 ## Installation
 1. **Add Repository**: Navigate to **Settings** > **Add-ons** > **Add-on Store**.
@@ -35,28 +34,48 @@ Configuration is done via the "Configuration" tab in the add-on.
 | :--- | :--- | :--- |
 | `host` | IP address or hostname of your Sungrow inverter. | `-` |
 | `port` | Modbus TCP port (usually 502). | `502` |
-| `slave` | Slave ID of your inverter.| `1` |
-| `winet_connection` | Ignore any registers that are not usable with the WiNET-S/WiNET-S2 module.| `false` |
-
+| `slave` | Slave/unit ID of your inverter. | `1` |
+| `winet_connection` | Ignore any registers that are not usable with the WiNET-S/WiNET-S2 module. | `false` |
 
 **MQTT**
 | Option | Description | Default |
 | :--- | :--- | :--- |
 | `host` | IP address or hostname of your MQTT broker. | `-` |
-| `port` | Port of your MQTT broker. | `1883` |
-| `user` | Username for MQTT authentication. | `-` |
-| `passwd` | Password for MQTT authentication. | `-` |
+| `port` | Port of your MQTT broker (use `8883` for TLS). | `1883` |
+| `username` | Username for MQTT authentication. | `-` |
+| `password` | Password for MQTT authentication. | `-` |
+| `homeassistant` | Publish Home Assistant MQTT Auto Discovery messages. | `true` |
 
 **Scan**
 | Option | Description | Default |
 | :--- | :--- | :--- |
-| `interval` | Polling interval in seconds. | `30` |
-| `timeout` | Modbus connection timeout in seconds. | `5` |
+| `delay` | Delay in seconds after connecting, before the first register read. | `5` |
+| `timeout` | Timeout in seconds while waiting for a Modbus response before logging an error. | `30` |
+| `retries` | Number of times a failed Modbus read is retried before giving up for that cycle. | `3` |
+| `level` | Which Modbus sensors get polled: `BASIC` (core power-flow values only), `STANDARD` (BASIC + common secondary values), or `FULL` (every register). Switches, numbers, selects and buttons are always available regardless of level. | `FULL` |
+| `interval` | Per-tier polling intervals in seconds, applied to registers tagged with the matching tier in the register file: | |
+| &nbsp;&nbsp;`realtime` | Interval for time-critical values (e.g. instantaneous power). | `5` |
+| &nbsp;&nbsp;`fast` | Interval for frequently-changing values (e.g. currents, voltages). | `10` |
+| &nbsp;&nbsp;`medium` | Interval for slower-changing values (e.g. daily energy counters). | `60` |
+| &nbsp;&nbsp;`slowest` | Interval for rarely-changing values (e.g. firmware versions, limits). | `600` |
 
 **General**
 | Option | Description | Default |
 | :--- | :--- | :--- |
 | `log_level` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). | `INFO` |
+
+---
+## Development
+
+Running the test suite requires no inverter or MQTT broker - it exercises the parsing, template and config logic directly against synthetic data.
+
+```bash
+pip install -r requirements-dev.txt
+pytest -v            # run the test suite
+ruff check .          # lint (unused imports, undefined names, syntax errors)
+```
+
+The same steps run automatically on every push/PR via GitHub Actions (`.github/workflows/ci.yml`).
 
 ---
 ## Credits & Inspirations

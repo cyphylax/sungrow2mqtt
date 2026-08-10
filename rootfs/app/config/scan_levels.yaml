@@ -1,0 +1,77 @@
+# Local, hand-curated scan-level tiers for sungrow2mqtt.
+#
+# Deliberately kept OUTSIDE modbus_sungrow.yaml: that file is auto-updated from
+# the mkaiser upstream repo at startup and would silently drop/overwrite any
+# per-register tagging we added there. This file is never touched by the
+# updater, so it survives upstream updates untouched.
+#
+# "level" only filters plain Modbus *sensors* (the bulk of the polling load).
+# Switches and template/control entities (numbers, selects, buttons, binary
+# sensors) are never filtered - they are cheap to poll and users on any level
+# should keep the ability to control the inverter.
+#
+# unique_ids here are the CLEANED ids (sg_/uid_ prefixes stripped), matching
+# what SungrowRegister._clean_unique_id() produces and what ends up in
+# Home Assistant entity ids.
+#
+# STANDARD = basic + standard. FULL (default) = everything, no filtering.
+
+basic:
+  - total_dc_power
+  - battery_power
+  - battery_level
+  - load_power
+  - total_active_power
+  - power_flow_status
+  - daily_pv_generation
+  - total_pv_generation
+  - export_power_limit
+  - running_state_raw
+
+standard:
+  - mppt1_voltage
+  - mppt1_current
+  - mppt2_voltage
+  - mppt2_current
+  - mppt3_voltage
+  - mppt3_current
+  - mppt4_voltage
+  - mppt4_current
+  - inverter_temperature
+  - battery_temperature
+  - battery_voltage
+  - battery_current
+  - battery_state_of_health
+  - grid_frequency
+  - phase_a_voltage
+  - phase_b_voltage
+  - phase_c_voltage
+  - phase_a_current
+  - phase_b_current
+  - phase_c_current
+  - daily_battery_charge
+  - total_battery_charge
+  - daily_battery_discharge
+  - total_battery_discharge
+  - daily_imported_energy
+  - total_imported_energy
+  - daily_exported_energy
+  - total_exported_energy
+  - meter_active_power
+  - total_backup_power
+  - battery_max_charge_power
+  - battery_max_discharge_power
+  - bdc_rated_power
+  - bms_max_charging_current
+  - bms_max_discharging_current
+
+# Always included, regardless of level: required for internal bootstrapping
+# (serial/model detection) or for switch state read-back (see the "verify"
+# entries in modbus_sungrow.yaml for backup_mode_switch, export_power_limit_switch
+# and load_adjustment_mode_switch, which read back these exact registers).
+essential:
+  - inverter_serial
+  - dev_code
+  - backup_mode_raw
+  - export_power_limit_mode_raw
+  - load_adjustment_mode_enable_raw

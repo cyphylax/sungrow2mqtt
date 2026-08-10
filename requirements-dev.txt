@@ -1,0 +1,6 @@
+# Additional dependencies for running the test suite / linting locally and in CI.
+# Install alongside rootfs/app/requirements.txt: the tests import the real
+# application modules, so both files are needed.
+-r rootfs/app/requirements.txt
+pytest==8.3.5
+ruff==0.9.6
