@@ -1,0 +1,13 @@
+[tool.pytest.ini_options]
+pythonpath = ["rootfs/app"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 160
+target-version = "py311"
+
+[tool.ruff.lint]
+# Kept intentionally small: pyflakes (unused imports/names, undefined names)
+# and hard syntax errors. This is meant to catch real mistakes, not enforce a
+# house style on code that predates this config.
+select = ["E9", "F"]

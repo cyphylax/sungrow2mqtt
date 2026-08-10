@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "developement"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: |
+            rootfs/app/requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff - unused imports, undefined names, syntax errors)
+        run: ruff check .
+
+      - name: Compile check
+        run: python -m compileall -q rootfs/app
+
+      - name: Run tests
+        run: pytest -v

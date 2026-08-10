@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Runtime dependencies (baked into the Docker image).
+  - package-ecosystem: "pip"
+    directory: "/rootfs/app"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Dev/test dependencies (pytest, ruff).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
