@@ -1,6 +1,7 @@
-# Additional dependencies for running the test suite / linting locally and in CI.
-# Install alongside rootfs/app/requirements.txt: the tests import the real
-# application modules, so both files are needed.
--r rootfs/app/requirements.txt
+# Dev/test-only dependencies (pytest, ruff). Deliberately does NOT -r
+# rootfs/app/requirements.txt: Dependabot resolves -r references across
+# directories, which caused it to re-report every runtime dependency bump
+# from rootfs/app/requirements.txt here too, opening duplicate PRs. Install
+# both files explicitly instead - see README.md's Development section.
 pytest==8.3.5
 ruff==0.9.6
