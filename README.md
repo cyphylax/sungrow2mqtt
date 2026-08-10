@@ -70,7 +70,7 @@ Configuration is done via the "Configuration" tab in the add-on.
 Running the test suite requires no inverter or MQTT broker - it exercises the parsing, template and config logic directly against synthetic data.
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r rootfs/app/requirements.txt -r requirements-dev.txt
 pytest -v            # run the test suite
 ruff check .          # lint (unused imports, undefined names, syntax errors)
 ```

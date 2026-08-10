@@ -3,18 +3,23 @@ updates:
   # Runtime dependencies (baked into the Docker image).
   - package-ecosystem: "pip"
     directory: "/rootfs/app"
+    target-branch: "developement"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
 
-  # Dev/test dependencies (pytest, ruff).
+  # Dev/test dependencies (pytest, ruff). requirements-dev.txt deliberately
+  # does not -r rootfs/app/requirements.txt (see that file) so this directory
+  # only ever reports its own two packages, not a duplicate of the entry above.
   - package-ecosystem: "pip"
     directory: "/"
+    target-branch: "developement"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
 
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "developement"
     schedule:
       interval: "weekly"
