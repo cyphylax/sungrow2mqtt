@@ -29,6 +29,8 @@ The project uses the register definitions from [mkaiser/Sungrow-SHx-Inverter-Mod
 ## Configuration
 Configuration is done via the "Configuration" tab in the add-on.
 
+> **Upgrading from before 1.2.0?** `scan.interval` changed from a single number to the `realtime`/`fast`/`medium`/`slowest` group described below - Home Assistant cannot migrate this automatically, so the add-on may refuse to start after updating until you open the Configuration tab and re-enter `scan.interval` in the new form (remove the old flat `interval: <number>` line if it's still there). If you also get a `timeout` validation error, just re-save that field - the accepted range was widened in 1.2.1.
+
 **Inverter**
 | Option | Description | Default |
 | :--- | :--- | :--- |

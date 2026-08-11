@@ -4,6 +4,11 @@
 
 ## Changelog
 
+### [1.2.1] - 2026-08-11
+#### Fixed
+- **`scan.timeout` rejected existing configurations**: 1.2.0 raised the minimum from `3` to `10` without a real functional reason, breaking startup for anyone with a lower value already saved (`config.yaml` validation error "Value must be at least 10.0", reported in #17). Widened back to `int(3,60)`.
+- Documented that `scan.interval`'s change from a single number to the `realtime`/`fast`/`medium`/`slowest` group (introduced in 1.2.0) requires manually re-entering the option after upgrading - Home Assistant has no way to migrate a stored option's shape automatically, so this can't be fixed in code, only made clear upfront. See the new note at the top of the README's Configuration section.
+
 ### [1.2.0] - 2026-08-09
 #### Added
 - **Scan Interval**: Added support for configurable per-tier polling intervals (`scan.interval.realtime`/`fast`/`medium`/`slowest`) (Issue #6)
