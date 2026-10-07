@@ -94,7 +94,7 @@ When a pull request is merged into `main`, `.github/workflows/release.yml`:
 1. bumps the version: **patch** by default, **minor** if the PR has the label `release:minor`, **major** with `release:major` (the workflow creates both labels on its first run);
 2. renames `[Unreleased]` in `CHANGELOG.md` to the new version with today's date, appends the titles of all PRs merged into `developement` since the previous release, and starts a new empty `[Unreleased]` section;
 3. commits this as `Release vX.Y.Z` on `main` and tags it `vX.Y.Z`;
-4. merges `main` back into `developement`, so the next release PR has no conflicts. If that is not possible (a conflict, or GitHub refusing the push because the release changed a workflow file), it opens a PR from `main` into `developement` instead. Merge that PR with **Create a merge commit**, not squash.
+4. copies the release commit to `developement` and records `main` as merged there (`git merge -s ours`, no file changes), so the next release PR has no conflicts. If that fails (a changelog conflict, or GitHub refusing the push), the workflow run fails and its summary lists the commands to do this step by hand.
 
 Set the label on the release PR before merging it; changing labels afterwards has no effect.
 - Dependabot reads `.github/dependabot.yml` from `main`, so changes to that file take effect after the next release.
