@@ -5,6 +5,9 @@
 ## Changelog
 
 ### [Unreleased]
+#### Fixed
+- **Empty "Unnamed device" in Home Assistant's MQTT integration**: the discovery `device` block set `"via_device": "sungrow2mqtt"`, but no device with that identifier was ever published. Home Assistant created an empty, unnamed device for it and listed the inverter as connected through it. The `via_device` entry is removed. The existing unnamed device is not removed automatically: delete it once via its menu (⋮ → Delete) in Home Assistant's MQTT integration.
+
 #### Security
 - **Register file parsed with `yaml.SafeLoader`**: `modbus_sungrow.yaml` is overwritten at startup from an external GitHub repository, but was loaded with `yaml.FullLoader`, which still constructs some Python objects (e.g. `!!python/name:`). It is now parsed with a `SafeLoader` subclass that only adds the file's own `!secret` tag; the tag is no longer registered globally on PyYAML's default loaders.
 - **Non-UTF-8 MQTT payloads no longer stop the MQTT client**: a set command whose payload was not valid UTF-8 raised inside paho's callback and ended its network thread. Such messages are now logged and ignored.

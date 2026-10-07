@@ -151,7 +151,7 @@ class Client(object):
 
         if self.config['homeassistant'] and not self.ha_discovery_published:
             # Build Device, this will be the same for every message
-            ha_device = { "name":f"Sungrow {self.model}", "manufacturer":"Sungrow", "model":self.model, "identifiers":self.serial_number, "via_device": "sungrow2mqtt", "connections":[["address", inverter.client.host + ":" + str(inverter.client.port)]] }
+            ha_device = { "name":f"Sungrow {self.model}", "manufacturer":"Sungrow", "model":self.model, "identifiers":self.serial_number, "connections":[["address", inverter.client.host + ":" + str(inverter.client.port)]] }
 
             # Dynamically update min/max limits based on actual inverter data
             self._update_dynamic_limits(inverter)
