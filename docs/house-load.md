@@ -1,67 +1,66 @@
-# Hausverbrauch: `load_power` vs. Sungrow-App
+# House load: `load_power` vs. the Sungrow app
 
-Diese Seite hält fest, was eine Vergleichsmessung am 2026-09-21 über den
-Hausverbrauch ergeben hat, und was noch offen ist. Sie soll erklären, warum der
-von sungrow2mqtt veröffentlichte Wert `load_power` nicht mit dem Hausverbrauch
-in der Sungrow-App (iSolarCloud) übereinstimmt.
+This page records what a comparison measurement on 2026-09-21 showed about the
+house load, and what is still open. It explains why the `load_power` value
+published by sungrow2mqtt does not match the house consumption shown in the
+Sungrow app (iSolarCloud).
 
-## Beteiligte Werte
+## Values involved
 
-| Wert | Quelle | Bedeutung laut Register-Definition |
+| Value | Source | Meaning according to the register definition |
 | --- | --- | --- |
-| `load_power` | Modbus-Register 13008 (`address: 13007`, int32, W) | Hausverbrauch, wie ihn der Wechselrichter meldet |
-| `total_active_power` | Register 13034 (`address: 13033`) | AC-Wirkleistung am Ausgang des Wechselrichters |
-| `meter_active_power` | Register 5601 (`address: 5600`) | Netzzähler, > 0 Bezug, < 0 Einspeisung |
-| `total_dc_power` | Register 5017 (`address: 5016`) | PV-Leistung auf der DC-Seite |
-| `battery_power` | Register 5214 (`address: 5213`) | Batterieleistung (Vorzeichen siehe Kommentar in `modbus_sungrow.yaml`) |
-| Hausverbrauch (App) | iSolarCloud, Cloud-Daten | Verbrauchsanzeige der Sungrow-App |
+| `load_power` | Modbus register 13008 (`address: 13007`, int32, W) | House load as reported by the inverter |
+| `total_active_power` | Register 13034 (`address: 13033`) | AC active power at the inverter output |
+| `meter_active_power` | Register 5601 (`address: 5600`) | Grid meter, > 0 import, < 0 export |
+| `total_dc_power` | Register 5017 (`address: 5016`) | PV power on the DC side |
+| `battery_power` | Register 5214 (`address: 5213`) | Battery power (for the sign, see the comment in `modbus_sungrow.yaml`) |
+| House consumption (app) | iSolarCloud, cloud data | Consumption shown in the Sungrow app |
 
-Die Register-Definitionen stehen in `rootfs/app/config/modbus_sungrow.yaml`.
+The register definitions live in `rootfs/app/config/modbus_sungrow.yaml`.
 
-## Ergebnisse der Messung vom 2026-09-21
+## Results of the measurement on 2026-09-21
 
-1. **`load_power` entspricht der AC-Bilanz.** Der Wert passt zur Bilanz auf der
-   AC-Seite: AC-Ausgang des Wechselrichters plus Netzbezug bzw. minus
-   Einspeisung.
-2. **Die Sungrow-App zeigt die DC-Bilanz.** Der Hausverbrauch in der App passt
-   zu einer Bilanz, die auf der DC-Seite (PV und Batterie) ansetzt.
-3. **Versatz ca. 90 bis 145 W.** Nachts und bei Batterieentladung liegt zwischen
-   beiden Werten ein Versatz in dieser Größenordnung.
-4. **Cloud-Zeitversatz ca. 8 bis 11 Minuten.** Die Werte der App laufen den lokal
-   per Modbus gelesenen Werten um etwa diese Zeit hinterher. Wer beide Kurven
-   vergleicht, muss sie vorher entsprechend gegeneinander verschieben.
+1. **`load_power` matches the AC balance.** The value fits a balance on the AC
+   side: inverter AC output plus grid import, or minus grid export.
+2. **The Sungrow app shows the DC balance.** The house consumption in the app
+   fits a balance that starts on the DC side (PV and battery).
+3. **Offset of roughly 90 to 145 W.** At night and while the battery is
+   discharging, the two values differ by about this amount.
+4. **Cloud delay of roughly 8 to 11 minutes.** The app values lag behind the
+   values read locally over Modbus by about this time. When comparing both
+   curves, shift them against each other accordingly first.
 
-### Grenzen dieser Werte
+### Limits of these values
 
-- Es handelt sich um **eine Messsitzung an einer Anlage** (2026-09-21). Die
-  Bereiche (90 bis 145 W, 8 bis 11 Minuten) sind die dort beobachtete Spanne,
-  keine garantierten Grenzen und keine statistische Auswertung.
-- Gemessen wurde **nachts und bei Batterieentladung**. Für Phasen mit hoher
-  PV-Leistung, Batterieladung oder Netzeinspeisung liegt kein belastbarer
-  Versatz vor.
-- Die App-Werte stammen aus der Cloud und sind zeitlich und in der Auflösung
-  gröber als die Modbus-Werte. Der Cloud-Zeitversatz von 8 bis 11 Minuten ist
-  selbst eine Fehlerquelle beim Vergleich.
-- Die Rohdaten der Messung liegen nicht im Repository.
-- **Nicht gemessen, nur Vermutung:** Der Versatz zwischen AC- und DC-Bilanz
-  dürfte im Wesentlichen den Umwandlungsverlusten und dem Eigenverbrauch des
-  Wechselrichters entsprechen. Das wurde nicht separat überprüft.
+- This is **one measurement session on one installation** (2026-09-21). The
+  ranges (90 to 145 W, 8 to 11 minutes) are the spread observed there, not
+  guaranteed bounds and not a statistical analysis.
+- Measurements were taken **at night and during battery discharge**. There is
+  no reliable offset for periods with high PV output, battery charging or grid
+  export.
+- The app values come from the cloud and are coarser in time and resolution
+  than the Modbus values. The 8 to 11 minute cloud delay is itself a source of
+  error in the comparison.
+- The raw data of the measurement is not in the repository.
+- **Not measured, only an assumption:** the offset between the AC and DC
+  balance probably reflects mostly conversion losses and the inverter's own
+  consumption. This has not been checked separately.
 
-## Offene Punkte
+## Open points
 
-- [ ] **App-Werte bei Batterieentladung:** Wie verhält sich der
-      Hausverbrauch der App bei Entladung genau, und ist der Versatz dort
-      konstant oder lastabhängig?
-- [ ] **App-Werte bei Netzeinspeisung:** Wie rechnet die App den Hausverbrauch,
-      wenn ins Netz eingespeist wird? Hierzu gibt es noch keine Messung.
-- [ ] Versatz bei Tag mit PV-Erzeugung und bei Batterieladung messen.
-- [ ] Prüfen, ob der Versatz mit der Last oder der Temperatur des
-      Wechselrichters zusammenhängt.
+- [ ] **App values during battery discharge:** how exactly does the app's
+      house consumption behave while discharging, and is the offset there
+      constant or load dependent?
+- [ ] **App values during grid export:** how does the app calculate house
+      consumption while exporting to the grid? No measurement exists yet.
+- [ ] Measure the offset during the day with PV generation and while the
+      battery is charging.
+- [ ] Check whether the offset depends on load or inverter temperature.
 
-## Praktische Folgen
+## Practical consequences
 
-- Für Auswertungen in Home Assistant ist `load_power` der lokal konsistente
-  Wert: Er passt zur AC-Bilanz aus Netzzähler und Wechselrichter-Ausgang.
-- Ein Abgleich mit der Sungrow-App ergibt systematisch abweichende Werte. Das
-  ist nach dieser Messung kein Fehler in sungrow2mqtt, sondern eine andere
-  Bilanzgrenze (AC statt DC).
+- For analysis in Home Assistant, `load_power` is the locally consistent value:
+  it matches the AC balance from the grid meter and the inverter output.
+- Comparing it with the Sungrow app gives systematically different values.
+  Based on this measurement, that is not a bug in sungrow2mqtt but a different
+  balance boundary (AC instead of DC).
