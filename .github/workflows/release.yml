@@ -7,10 +7,10 @@ name: Release
 #      release:major),
 #   2. moves the [Unreleased] notes in CHANGELOG.md into a section for the new
 #      version and lists the PRs merged into developement since the last
-#      release,
+#      release (main has no [Unreleased] heading afterwards),
 #   3. commits "Release vX.Y.Z" to main and tags it,
-#   4. carries the release commit over to developement and records main as
-#      merged there, so the next release PR has no conflicts. If that fails,
+#   4. carries the release commit over to developement, adds an empty
+#      [Unreleased] heading there again and records main as merged there, so the next release PR has no conflicts. If that fails,
 #      the job fails and its summary lists the commands to do it by hand.
 #
 # The commit pushed here uses GITHUB_TOKEN, which does not trigger workflows,
@@ -104,6 +104,8 @@ jobs:
           # so the next release PR has main as merge base and no conflicts.
           # The "ours" merge leaves developement's files as they are.
           if git cherry-pick "$release_sha" \
+             && python3 .github/scripts/release.py --add-unreleased \
+             && { git diff --quiet || git commit -am "Start [Unreleased] changelog section after v$version"; } \
              && git merge -s ours "$release_sha" -m "Merge release v$version into developement" \
              && git push origin developement; then
             echo "Merged v$version back into developement." >> "$GITHUB_STEP_SUMMARY"
@@ -114,6 +116,7 @@ jobs:
               echo '```'
               echo "git fetch origin && git checkout developement && git pull"
               echo "git cherry-pick $release_sha   # resolve CHANGELOG.md if needed"
+              echo "python3 .github/scripts/release.py --add-unreleased && git commit -am \"Start [Unreleased] changelog section\""
               echo "git merge -s ours $release_sha -m \"Merge release v$version into developement\""
               echo "git push origin developement"
               echo '```'
