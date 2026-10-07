@@ -5,6 +5,8 @@
 ## Changelog
 
 ### [Unreleased]
+
+### [1.2.2] - 2026-10-07
 #### Fixed
 - **Empty "Unnamed device" in Home Assistant's MQTT integration**: the discovery `device` block set `"via_device": "sungrow2mqtt"`, but no device with that identifier was ever published. Home Assistant created an empty, unnamed device for it and listed the inverter as connected through it. The `via_device` entry is removed. The existing unnamed device is not removed automatically: delete it once via its menu (⋮ → Delete) in Home Assistant's MQTT integration.
 - **Phantom "Sungrow None" device in Home Assistant**: if the inverter's serial number could not be read at startup (e.g. a failed Modbus read right after connecting), the add-on kept running and published everything under `Sungrow/None` plus retained discovery configs under `homeassistant/<component>/None/...`, which Home Assistant showed as a separate device named "Sungrow None" (or "Sungrow Unknown (0x0)" when the registers read as zero). The serial read is now retried up to 5 times, 10 seconds apart; if it still fails, the add-on stops with a clear error instead of publishing under a missing serial. Already created phantom devices are not removed automatically: delete the device in Home Assistant's MQTT integration and clear the retained `Sungrow/None/#` topics on the broker.
@@ -15,6 +17,16 @@
 #### Security
 - **Register file parsed with `yaml.SafeLoader`**: `modbus_sungrow.yaml` is overwritten at startup from an external GitHub repository, but was loaded with `yaml.FullLoader`, which still constructs some Python objects (e.g. `!!python/name:`). It is now parsed with a `SafeLoader` subclass that only adds the file's own `!secret` tag; the tag is no longer registered globally on PyYAML's default loaders.
 - **Non-UTF-8 MQTT payloads no longer stop the MQTT client**: a set command whose payload was not valid UTF-8 raised inside paho's callback and ended its network thread. Such messages are now logged and ignored.
+#### Merged pull requests
+- Docs: house load, load_power vs. Sungrow app ([#19](https://github.com/cyphylax/sungrow2mqtt/pull/19))
+- Parse register file with SafeLoader and ignore non-UTF-8 MQTT payloads ([#20](https://github.com/cyphylax/sungrow2mqtt/pull/20))
+- Update dev tools and CI actions, bundle Dependabot updates into one weekly PR ([#21](https://github.com/cyphylax/sungrow2mqtt/pull/21))
+- Move add-on image to base-python 3.13 (Alpine 3.24) ([#23](https://github.com/cyphylax/sungrow2mqtt/pull/23))
+- Stop instead of publishing under a missing serial number ([#24](https://github.com/cyphylax/sungrow2mqtt/pull/24))
+- Remove via_device that created an empty "Unnamed device" in HA ([#25](https://github.com/cyphylax/sungrow2mqtt/pull/25))
+- Bump version and write changelog automatically on merge into main ([#26](https://github.com/cyphylax/sungrow2mqtt/pull/26))
+- Record main as merged into developement (merge with a merge commit, not squash) ([#27](https://github.com/cyphylax/sungrow2mqtt/pull/27))
+- Release workflow: carry the release commit back to developement, sync main history ([#28](https://github.com/cyphylax/sungrow2mqtt/pull/28))
 
 ### [1.2.1] - 2026-08-11
 #### Fixed
