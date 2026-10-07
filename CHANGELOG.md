@@ -5,6 +5,9 @@
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- **Base image / Python**: The add-on image now builds on Home Assistant's `base-python:3.13-alpine3.24` image (both `amd64` and `aarch64`) instead of `base:3.15`. The old base was Alpine 3.15 with Python 3.9, which no longer receives updates and blocked current dependency releases that require Python 3.10 or newer (e.g. `requests` 2.33+). Python now comes from the base image under `/usr/local` instead of Alpine's `py3-pip` package, so the Dockerfile no longer installs Python via `apk` or needs `--break-system-packages`. Python 3.13 matches the newest version CI already tests against. No configuration changes are needed.
+
 #### Security
 - **Register file parsed with `yaml.SafeLoader`**: `modbus_sungrow.yaml` is overwritten at startup from an external GitHub repository, but was loaded with `yaml.FullLoader`, which still constructs some Python objects (e.g. `!!python/name:`). It is now parsed with a `SafeLoader` subclass that only adds the file's own `!secret` tag; the tag is no longer registered globally on PyYAML's default loaders.
 - **Non-UTF-8 MQTT payloads no longer stop the MQTT client**: a set command whose payload was not valid UTF-8 raised inside paho's callback and ended its network thread. Such messages are now logged and ignored.
