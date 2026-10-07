@@ -5,6 +5,9 @@
 ## Changelog
 
 ### [Unreleased]
+#### Fixed
+- **Phantom "Sungrow None" device in Home Assistant**: if the inverter's serial number could not be read at startup (e.g. a failed Modbus read right after connecting), the add-on kept running and published everything under `Sungrow/None` plus retained discovery configs under `homeassistant/<component>/None/...`, which Home Assistant showed as a separate device named "Sungrow None" (or "Sungrow Unknown (0x0)" when the registers read as zero). The serial read is now retried up to 5 times, 10 seconds apart; if it still fails, the add-on stops with a clear error instead of publishing under a missing serial. Already created phantom devices are not removed automatically: delete the device in Home Assistant's MQTT integration and clear the retained `Sungrow/None/#` topics on the broker.
+
 #### Security
 - **Register file parsed with `yaml.SafeLoader`**: `modbus_sungrow.yaml` is overwritten at startup from an external GitHub repository, but was loaded with `yaml.FullLoader`, which still constructs some Python objects (e.g. `!!python/name:`). It is now parsed with a `SafeLoader` subclass that only adds the file's own `!secret` tag; the tag is no longer registered globally on PyYAML's default loaders.
 - **Non-UTF-8 MQTT payloads no longer stop the MQTT client**: a set command whose payload was not valid UTF-8 raised inside paho's callback and ended its network thread. Such messages are now logged and ignored.
