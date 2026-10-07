@@ -1,0 +1,35 @@
+name: Dependabot week tag
+
+# Dependabot cannot put dynamic values into PR titles, so this appends the
+# ISO week and year the PR was opened in, e.g. "(Week 41/2026)". That makes
+# the weekly bundled update PR (see .github/dependabot.yml) traceable.
+#
+# pull_request_target runs with the base branch's workflow and a token that
+# can edit the PR. It never checks out or runs code from the PR branch.
+on:
+  pull_request_target:
+    types: [opened, reopened, edited]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  tag-week:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Append week/year to title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_CREATED: ${{ github.event.pull_request.created_at }}
+        run: |
+          # Dependabot may rewrite the title when it updates the PR; the
+          # "edited" trigger re-adds the tag, and this check stops a loop.
+          case "$PR_TITLE" in
+            *"(Week "*) echo "Title already tagged"; exit 0 ;;
+          esac
+          week=$(date -u -d "$PR_CREATED" +'%V/%G')
+          gh pr edit "$PR_NUMBER" --title "$PR_TITLE (Week $week)"

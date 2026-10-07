@@ -1,25 +1,43 @@
 version: 2
+
+# All updates (runtime pip, dev pip, GitHub Actions) are bundled into a
+# single weekly PR against developement.
+multi-ecosystem-groups:
+  weekly-dependencies:
+    target-branch: "developement"
+    schedule:
+      interval: "weekly"
+
 updates:
   # Runtime dependencies (baked into the Docker image).
   - package-ecosystem: "pip"
     directory: "/rootfs/app"
-    target-branch: "developement"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+    patterns: ["*"]
+    multi-ecosystem-group: "weekly-dependencies"
+    ignore:
+      # The add-on image is built on Alpine 3.15, which ships Python 3.9
+      # (see build.yaml). These updates need a newer Python or a code
+      # migration, so they would break the image build or the inverter
+      # connection even though CI (3.11/3.13) stays green. Remove these
+      # entries once the base image moves to a newer Python.
+      #
+      # pymodbus 3.x removed pymodbus.client.sync (used in
+      # modules/sungrow.py) and requires Python >= 3.10.
+      - dependency-name: "pymodbus"
+        update-types: ["version-update:semver-major"]
+      # requests >= 2.33 requires Python >= 3.10.
+      - dependency-name: "requests"
+        versions: [">=2.33"]
 
   # Dev/test dependencies (pytest, ruff). requirements-dev.txt deliberately
   # does not -r rootfs/app/requirements.txt (see that file) so this directory
   # only ever reports its own two packages, not a duplicate of the entry above.
   - package-ecosystem: "pip"
     directory: "/"
-    target-branch: "developement"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+    patterns: ["*"]
+    multi-ecosystem-group: "weekly-dependencies"
 
   - package-ecosystem: "github-actions"
     directory: "/"
-    target-branch: "developement"
-    schedule:
-      interval: "weekly"
+    patterns: ["*"]
+    multi-ecosystem-group: "weekly-dependencies"

@@ -79,6 +79,14 @@ ruff check .          # lint (unused imports, undefined names, syntax errors)
 
 The same steps run automatically on every push/PR via GitHub Actions (`.github/workflows/ci.yml`).
 
+### Branches and dependency updates
+
+- All work, including dependency updates, goes into `developement`.
+- Dependabot opens **one** pull request per week against `developement` that bundles every update (runtime packages, dev tools, GitHub Actions). Its title ends with the ISO week and year, e.g. `(Week 41/2026)`, added by `.github/workflows/dependabot-week-label.yml`.
+- A release moves `developement` into `main` with a **squash merge**, so each release is a single commit on `main`.
+- Dependabot reads `.github/dependabot.yml` from `main`, so changes to that file take effect after the next release.
+- Some updates are ignored on purpose because the add-on image runs Python 3.9 (Alpine 3.15), which CI does not test. See the comments in `.github/dependabot.yml`.
+
 ---
 ## Credits & Inspirations
 
