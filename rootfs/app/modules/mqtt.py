@@ -101,7 +101,13 @@ class Client(object):
 
     def on_message(self, client: Any, userdata: Any, msg: Any) -> None:
         topic = msg.topic
-        payload = msg.payload.decode().strip()
+        try:
+            payload = msg.payload.decode().strip()
+        except UnicodeDecodeError:
+            # An exception here would kill paho's network thread; anyone able to
+            # publish to the broker could otherwise stop the add-on this way.
+            log.warning(f"MQTT: Ignoring message on {topic}: payload is not valid UTF-8")
+            return
         
         base_topic = self.config['topic'].rstrip("/")
         if topic.startswith(base_topic) and topic.endswith("/set"):
@@ -145,7 +151,7 @@ class Client(object):
 
         if self.config['homeassistant'] and not self.ha_discovery_published:
             # Build Device, this will be the same for every message
-            ha_device = { "name":f"Sungrow {self.model}", "manufacturer":"Sungrow", "model":self.model, "identifiers":self.serial_number, "via_device": "sungrow2mqtt", "connections":[["address", inverter.client.host + ":" + str(inverter.client.port)]] }
+            ha_device = { "name":f"Sungrow {self.model}", "manufacturer":"Sungrow", "model":self.model, "identifiers":self.serial_number, "connections":[["address", inverter.client.host + ":" + str(inverter.client.port)]] }
 
             # Dynamically update min/max limits based on actual inverter data
             self._update_dynamic_limits(inverter)

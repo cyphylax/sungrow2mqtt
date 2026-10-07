@@ -105,8 +105,13 @@ class Registers:
         self.registerfile_path = registerfile
         self.registerfile = None
 
-        # Register YAML constructor for !secret
-        yaml.add_constructor('!secret', self.secret_constructor)
+        # The register file is auto-updated from an external source, so it is
+        # parsed with a SafeLoader. !secret is registered on a private subclass
+        # instead of globally on PyYAML's default loaders.
+        class _RegisterLoader(yaml.SafeLoader):
+            pass
+        _RegisterLoader.add_constructor('!secret', self.secret_constructor)
+        self._yaml_loader = _RegisterLoader
         self.load_registerfile()
         self.load_scan_levels()
 
@@ -115,7 +120,7 @@ class Registers:
         try:
             with open(self.registerfile_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                self.registerfile = yaml.load(content, Loader=yaml.FullLoader)
+                self.registerfile = yaml.load(content, Loader=self._yaml_loader)
         except Exception as e:
             log.error(f"Error loading register file: {e}")
             self.registerfile = {}

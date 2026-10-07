@@ -1,0 +1,122 @@
+name: Release
+
+# Runs when a pull request (normally the squash-merged release PR from
+# developement) lands on main:
+#   1. bumps the version in config.yaml and rootfs/app/modules/version.py
+#      (patch by default, minor/major via the PR labels release:minor and
+#      release:major),
+#   2. moves the [Unreleased] notes in CHANGELOG.md into a section for the new
+#      version and lists the PRs merged into developement since the last
+#      release,
+#   3. commits "Release vX.Y.Z" to main and tags it,
+#   4. carries the release commit over to developement and records main as
+#      merged there, so the next release PR has no conflicts. If that fails,
+#      the job fails and its summary lists the commands to do it by hand.
+#
+# The commit pushed here uses GITHUB_TOKEN, which does not trigger workflows,
+# so this does not run again on its own release commit. The `if` below is a
+# second guard against that.
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+  pull-requests: read
+  issues: write # gh label create
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ !startsWith(github.event.head_commit.message, 'Release v') }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Make sure the release labels exist
+        run: |
+          gh label create "release:minor" --color 0E8A16 --force \
+            --description "Merging into main bumps the minor version (x.Y.0)"
+          gh label create "release:major" --color B60205 --force \
+            --description "Merging into main bumps the major version (X.0.0)"
+
+      - name: Pick version part from the PR labels
+        id: part
+        run: |
+          labels=$(gh api "repos/$GH_REPO/commits/$GITHUB_SHA/pulls" --jq '[.[].labels[].name] | join(",")')
+          echo "PR labels: ${labels:-none}"
+          case ",$labels," in
+            *",release:major,"*) part=major ;;
+            *",release:minor,"*) part=minor ;;
+            *) part=patch ;;
+          esac
+          echo "part=$part" >> "$GITHUB_OUTPUT"
+
+      - name: Collect PRs merged into developement since the last release
+        run: |
+          last_tag=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+          # Before the first tag exists, the previous commit on main is the
+          # previous release.
+          since=$(git log -1 --format=%cI "${last_tag:-HEAD^}")
+          since=$(date -u -d "$since" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Previous release: ${last_tag:-HEAD^} ($since)"
+          gh pr list --base developement --state merged --limit 200 \
+            --search "merged:>$since" --json number,title,url > "$RUNNER_TEMP/prs.json"
+          jq -r '.[] | "#\(.number) \(.title)"' "$RUNNER_TEMP/prs.json"
+
+      - name: Bump version and update changelog
+        id: bump
+        run: |
+          version=$(python3 .github/scripts/release.py \
+            --part "${{ steps.part.outputs.part }}" \
+            --date "$(date -u +%F)" \
+            --prs "$RUNNER_TEMP/prs.json")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "New version: $version"
+
+      - name: Commit, tag and push to main
+        run: |
+          version="${{ steps.bump.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release v$version"
+          git tag "v$version"
+          git push origin HEAD:main "v$version"
+          echo "Released **v$version** (${{ steps.part.outputs.part }} bump)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Merge the release back into developement
+        run: |
+          version="${{ steps.bump.outputs.version }}"
+          release_sha=$(git rev-parse HEAD)
+          git fetch origin developement
+          git checkout -B developement origin/developement
+          # Releases are squash-merged into main, so main's history never
+          # contains developement's commits. Take over only the release commit
+          # (version + changelog), then record main as merged with "-s ours"
+          # so the next release PR has main as merge base and no conflicts.
+          # The "ours" merge leaves developement's files as they are.
+          if git cherry-pick "$release_sha" \
+             && git merge -s ours "$release_sha" -m "Merge release v$version into developement" \
+             && git push origin developement; then
+            echo "Merged v$version back into developement." >> "$GITHUB_STEP_SUMMARY"
+          else
+            git cherry-pick --abort 2>/dev/null || true
+            {
+              echo "Could not merge v$version back into developement (conflict or refused push). Run locally:"
+              echo '```'
+              echo "git fetch origin && git checkout developement && git pull"
+              echo "git cherry-pick $release_sha   # resolve CHANGELOG.md if needed"
+              echo "git merge -s ours $release_sha -m \"Merge release v$version into developement\""
+              echo "git push origin developement"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

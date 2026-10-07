@@ -8,6 +8,10 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 from pymodbus.client.sync import ModbusTcpClient
+
+# Startup read of the serial number (see configure_inverter)
+SERIAL_READ_ATTEMPTS = 5
+SERIAL_READ_RETRY_DELAY = 10  # seconds
 log = logging.getLogger(__name__)
 class Client:
     def __init__(self, config: dict) -> None:
@@ -175,11 +179,27 @@ class Client:
             log.info(f"Waiting {connect_delay}s after connecting before the first read (scan.delay)...")
             time.sleep(connect_delay)
 
-        try:
-            self._read_register_value()
-        except Exception as e:
-            log.error(f"Error reading initial register values: {e}")
-            raise
+        # The serial number becomes the MQTT topic (Sungrow/<serial>), the
+        # discovery node_id and the HA device identifier. If the initial read
+        # fails, carrying on would publish retained discovery configs for a
+        # separate "Sungrow None" device under Sungrow/None - so retry, and
+        # stop instead of publishing under a missing serial.
+        for attempt in range(1, SERIAL_READ_ATTEMPTS + 1):
+            try:
+                self._read_register_value()
+            except Exception as e:
+                log.error(f"Error reading initial register values: {e}")
+                raise
+            if self.serial_number:
+                break
+            if attempt < SERIAL_READ_ATTEMPTS:
+                log.warning(f"Could not read the inverter serial number (attempt {attempt}/{SERIAL_READ_ATTEMPTS}), retrying in {SERIAL_READ_RETRY_DELAY}s...")
+                time.sleep(SERIAL_READ_RETRY_DELAY)
+        else:
+            raise RuntimeError(
+                f"Could not read the inverter serial number after {SERIAL_READ_ATTEMPTS} attempts; "
+                "not publishing to MQTT without it. Check the Modbus connection to the inverter."
+            )
         log.info(f'Inverter configured successfully. Model: {self.model}, Serial Number: {self.serial_number}')
 
     def _log_polling_plan(self) -> None:
