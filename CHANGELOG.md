@@ -5,6 +5,8 @@
 ## Changelog
 
 ### [Unreleased]
+#### Changed
+- **Changelog on `main` without `[Unreleased]`**: the release workflow no longer leaves an empty `[Unreleased]` heading on `main` (it showed up in the add-on's changelog in Home Assistant). The heading now only exists on `developement`, where the workflow re-adds it after each release.
 
 ### [1.2.2] - 2026-10-07
 #### Fixed

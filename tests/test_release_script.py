@@ -58,8 +58,6 @@ def test_changelog_moves_unreleased_notes_and_lists_prs():
 
 ## Changelog
 
-### [Unreleased]
-
 ### [1.2.2] - 2026-10-07
 #### Fixed
 - Something fixed.
@@ -76,14 +74,24 @@ def test_changelog_moves_unreleased_notes_and_lists_prs():
 def test_changelog_without_notes_or_prs():
     text = "## Changelog\n\n### [Unreleased]\n\n### [1.0.0] - 2026-01-01\n- First.\n"
     result = release.update_changelog(text, "1.0.1", "2026-10-07", [])
-    assert result == "## Changelog\n\n### [Unreleased]\n\n### [1.0.1] - 2026-10-07\n- No changes recorded.\n\n### [1.0.0] - 2026-01-01\n- First.\n"
+    assert result == "## Changelog\n\n### [1.0.1] - 2026-10-07\n- No changes recorded.\n\n### [1.0.0] - 2026-01-01\n- First.\n"
 
 
 def test_changelog_without_unreleased_heading():
     text = "## Changelog\n\n### [1.0.0] - 2026-01-01\n- First.\n"
     result = release.update_changelog(text, "1.0.1", "2026-10-07", PRS[:1])
     assert result == (
-        "## Changelog\n\n### [Unreleased]\n\n### [1.0.1] - 2026-10-07\n"
+        "## Changelog\n\n### [1.0.1] - 2026-10-07\n"
         "#### Merged pull requests\n- Remove via_device ([#25](https://example.test/pull/25))\n\n"
         "### [1.0.0] - 2026-01-01\n- First.\n"
     )
+
+
+def test_add_unreleased_inserts_heading_before_first_release():
+    text = "## Changelog\n\n### [1.0.1] - 2026-10-07\n- Fix.\n"
+    assert release.add_unreleased(text) == "## Changelog\n\n### [Unreleased]\n\n### [1.0.1] - 2026-10-07\n- Fix.\n"
+
+
+def test_add_unreleased_keeps_existing_heading():
+    text = "## Changelog\n\n### [Unreleased]\n- Pending.\n\n### [1.0.0] - 2026-01-01\n"
+    assert release.add_unreleased(text) == text

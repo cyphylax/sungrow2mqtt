@@ -5,10 +5,15 @@ main. Only uses the standard library, so the workflow needs no pip install.
 
 Usage:
     release.py --part patch|minor|major --date YYYY-MM-DD --prs prs.json
+    release.py --add-unreleased
 
 prs.json is the output of `gh pr list --json number,title,url`, i.e. the pull
 requests merged into developement since the previous release. The new version
 is printed on stdout.
+
+--add-unreleased only puts an empty [Unreleased] heading back on top of the
+changelog. The workflow runs it on developement after carrying the release
+over, so the heading exists there but not on main.
 """
 
 import argparse
@@ -60,9 +65,9 @@ def format_prs(prs: list) -> str:
 def update_changelog(text: str, version: str, date: str, prs: list) -> str:
     """Move the [Unreleased] notes into a new [version] section.
 
-    The hand-written notes under [Unreleased] are kept as they are, the merged
-    pull requests are appended as their own list, and an empty [Unreleased]
-    heading stays on top for the next round of changes.
+    The hand-written notes under [Unreleased] are kept as they are and the
+    merged pull requests are appended as their own list. The [Unreleased]
+    heading itself is removed; add_unreleased() puts it back on developement.
     """
     unreleased = UNRELEASED_RE.search(text)
     if unreleased:
@@ -89,15 +94,32 @@ def update_changelog(text: str, version: str, date: str, prs: list) -> str:
         parts.append("- No changes recorded.")
     section = "\n".join(parts)
 
-    return f"{head}### [Unreleased]\n\n{section}\n\n{tail.lstrip(chr(10))}"
+    return f"{head}{section}\n\n{tail.lstrip(chr(10))}"
+
+
+def add_unreleased(text: str) -> str:
+    """Insert an empty [Unreleased] heading before the first release section."""
+    if UNRELEASED_RE.search(text):
+        return text
+    first = NEXT_SECTION_RE.search(text)
+    cut = first.start() if first else len(text)
+    head = text[:cut].rstrip("\n") + "\n\n"
+    return f"{head}### [Unreleased]\n\n{text[cut:]}"
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--part", choices=["patch", "minor", "major"], default="patch")
-    parser.add_argument("--date", required=True)
+    parser.add_argument("--date")
     parser.add_argument("--prs", type=Path, help="JSON list of merged pull requests")
+    parser.add_argument("--add-unreleased", action="store_true", help="only add an empty [Unreleased] heading")
     args = parser.parse_args()
+
+    if args.add_unreleased:
+        CHANGELOG_FILE.write_text(add_unreleased(CHANGELOG_FILE.read_text(encoding="utf-8")), encoding="utf-8")
+        return
+    if not args.date:
+        parser.error("--date is required")
 
     prs = json.loads(args.prs.read_text(encoding="utf-8")) if args.prs else []
 
