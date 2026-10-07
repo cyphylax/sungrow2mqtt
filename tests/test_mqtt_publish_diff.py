@@ -98,3 +98,20 @@ def test_value_changing_to_none_is_republished(mqtt_client):
     mqtt_client.publish(inverter)
 
     assert mqtt_client.mqtt_client.published == [("Sungrow/TEST123/a", None)]
+
+
+def test_discovery_device_has_no_via_device(mqtt_client):
+    """via_device must reference an existing HA device; "sungrow2mqtt" never
+    was one, so Home Assistant showed an empty "Unnamed device" that the
+    inverter device appeared to be connected through."""
+    import json
+    mqtt_client.config["homeassistant"] = True
+    mqtt_client.model, mqtt_client.serial_number = "SH10RT", "SN1"
+    mqtt_client.ha_sensors = {"sensor": [{"name": "Load", "sensor_type": "sensor", "unique_id": "load_power"}]}
+    mqtt_client.publish(FakeInverter({}))
+
+    configs = [json.loads(p) for t, p in mqtt_client.mqtt_client.published if t.startswith("homeassistant/")]
+    assert configs
+    for config in configs:
+        assert config["device"]["identifiers"] == "SN1"
+        assert "via_device" not in config["device"]
