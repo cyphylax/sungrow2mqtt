@@ -101,7 +101,13 @@ class Client(object):
 
     def on_message(self, client: Any, userdata: Any, msg: Any) -> None:
         topic = msg.topic
-        payload = msg.payload.decode().strip()
+        try:
+            payload = msg.payload.decode().strip()
+        except UnicodeDecodeError:
+            # An exception here would kill paho's network thread; anyone able to
+            # publish to the broker could otherwise stop the add-on this way.
+            log.warning(f"MQTT: Ignoring message on {topic}: payload is not valid UTF-8")
+            return
         
         base_topic = self.config['topic'].rstrip("/")
         if topic.startswith(base_topic) and topic.endswith("/set"):

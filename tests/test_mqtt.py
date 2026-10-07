@@ -79,3 +79,15 @@ def test_publish_skips_when_disconnected(mqtt_client):
     result = mqtt_client.publish(FakeInverter())
 
     assert result is False
+
+
+def test_on_message_ignores_non_utf8_payload(mqtt_client):
+    mqtt_client.ha_sensors = {
+        "number": [{"unique_id": "battery_min_soc", "input_type": "holding"}]
+    }
+    msg = FakeMsg("Sungrow/TEST123/battery_min_soc/set", "")
+    msg.payload = b"\xff\xfe"
+
+    mqtt_client.on_message(None, None, msg)
+
+    assert "last_set_value" not in mqtt_client.ha_sensors["number"][0]
