@@ -4,6 +4,11 @@
 
 ## Changelog
 
+### [Unreleased]
+#### Security
+- **Register file parsed with `yaml.SafeLoader`**: `modbus_sungrow.yaml` is overwritten at startup from an external GitHub repository, but was loaded with `yaml.FullLoader`, which still constructs some Python objects (e.g. `!!python/name:`). It is now parsed with a `SafeLoader` subclass that only adds the file's own `!secret` tag; the tag is no longer registered globally on PyYAML's default loaders.
+- **Non-UTF-8 MQTT payloads no longer stop the MQTT client**: a set command whose payload was not valid UTF-8 raised inside paho's callback and ended its network thread. Such messages are now logged and ignored.
+
 ### [1.2.1] - 2026-08-11
 #### Fixed
 - **`scan.timeout` rejected existing configurations**: 1.2.0 raised the minimum from `3` to `10` without a real functional reason, breaking startup for anyone with a lower value already saved (`config.yaml` validation error "Value must be at least 10.0", reported in #17). Widened back to `int(3,60)`.
