@@ -5,13 +5,13 @@ FROM $BUILD_FROM
 # Copy root filesystem
 COPY rootfs /
 
-# Install packages
-RUN apk add --no-cache python3 py3-pip
-RUN python3 -m pip install --upgrade pip
+# Python itself comes from the base-python image (see build.yaml), installed
+# under /usr/local - not Alpine's system Python, so pip needs no
+# --break-system-packages and the interpreter version is pinned by the tag.
 
 # Install application requirements
 WORKDIR /app
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 
 RUN chmod +x /etc/services.d/sungrow2mqtt/run
