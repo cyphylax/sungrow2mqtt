@@ -2,8 +2,11 @@
 
 Status: **draft concept, nothing implemented yet.** This page describes where
 sungrow2mqtt currently assumes exactly one inverter, three ways to support
-several, and a recommended path. It is meant as the basis for deciding the
-configuration format before any code is written.
+several, and a recommended path.
+
+Decided on 2026-10-08: the configuration keeps the existing `inverter` block
+and adds an `additional_inverters` list (option 1 in
+[Configuration and backward compatibility](#configuration-and-backward-compatibility)).
 
 ## Goal
 
@@ -137,7 +140,7 @@ Home Assistant cannot migrate the shape of a stored add-on option (this is why
 change should therefore only **add** a new top-level option and leave the
 existing `inverter:` block as it is.
 
-Proposed format (option 1 below, recommended):
+Chosen format (option 1 below):
 
 ```yaml
 inverter:                 # unchanged; the first inverter
@@ -169,7 +172,7 @@ schema:
 
 Options considered:
 
-1. **Keep `inverter`, add `additional_inverters` list** (recommended). Existing
+1. **Keep `inverter`, add `additional_inverters` list** (chosen). Existing
    configurations stay valid without any action; the new key is a new
    top-level option with a default. Slightly unusual to have "first" and
    "additional" inverters in two places.
