@@ -12,6 +12,9 @@ class Client(object):
         self.mqtt_queue = []
         self.ha_discovery_published = False
         self.status = "offline"
+        # Set on every (re)connect so set_status() publishes the current status
+        # once more, e.g. after a broker restart that lost retained messages.
+        self._status_republish = True
         # Last value actually published per unique_id, so publish() can skip
         # republishing topics whose value hasn't changed since last cycle.
         self._last_published = {}
@@ -72,6 +75,7 @@ class Client(object):
     def on_connect(self, client: Any, userdata: Any, flags: Any, reason_code: int, properties: Any) -> None:
         if reason_code == 0:
             log.info(f"MQTT: Connected to {client._host}:{client._port}")
+            self._status_republish = True
             # Ensure subscriptions after connect or reconnect
             topic_to_sub = self.config['topic'].rstrip("/") + "/+/set"
             client.subscribe(topic_to_sub, qos=0)
@@ -133,6 +137,26 @@ class Client(object):
                     break
             else:                
                 log.warning(f"MQTT: Received set command for {target_id} but it was not found in the configuration")
+
+    def set_status(self, status: str) -> None:
+        """Publishes the retained availability status ('online'/'offline') on
+        the base topic, but only when it differs from the last published one
+        or after a (re)connect - not on every main loop tick."""
+        if status == self.status and not self._status_republish:
+            return
+        try:
+            msg_info = self.mqtt_client.publish(self.config['topic'], status, retain=True)
+        except Exception as publish_err:
+            log.warning(f"MQTT: Failed to publish status {status}: {publish_err}")
+            return
+        rc = getattr(msg_info, 'rc', mqtt.MQTT_ERR_SUCCESS)
+        if rc != mqtt.MQTT_ERR_SUCCESS:
+            # Not connected: keep the old state so the next call tries again.
+            log.debug(f"MQTT: Status {status} not published (rc={rc}), will retry")
+            return
+        self.status = status
+        self._status_republish = False
+        log.debug(f"MQTT: Published status {status}")
 
     def cleanName(self, name: str) -> str:
         return name.lower().replace(' ','_')
