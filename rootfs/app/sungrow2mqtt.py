@@ -104,7 +104,7 @@ def poll_and_publish(inverter: Any, export: Any, current_time: float) -> bool:
     # reflooding MQTT with unchanged values on every idle loop tick.
     polled = inverter.poll_blocks(current_time)
     if polled:
-        inverter.update_templates(export.ha_sensors)
+        inverter.update_templates(inverter.ha_sensors)
         export.publish(inverter)
     return polled
 
@@ -227,7 +227,7 @@ if __name__ == '__main__':
     inverter = sungrow.Client(config)
     export = mqtt.Client()
     update_register_file(register_path)
-    register = modbus.Registers(register_path, inverter, export)
+    register = modbus.Registers(register_path, inverter)
     register.configure()
     inverter.configure_inverter()
     if not export.configure(config, inverter):

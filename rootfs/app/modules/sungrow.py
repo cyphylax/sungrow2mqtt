@@ -44,6 +44,9 @@ class Client:
         self.model = None
         self.inverter_config = {}
         self.registers = {}
+        # HA entities of this inverter, populated by Registers.configure(). Owned
+        # by the inverter (not the MQTT client) so every inverter has its own set.
+        self.ha_sensors = {}
         self.address_lookup = {}
         self.read_blocks = {}
         self.last_scrape = {}
