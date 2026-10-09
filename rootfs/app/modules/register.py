@@ -1,4 +1,4 @@
-import yaml, re, pathlib, copy
+import yaml, re, pathlib
 import logging
 from typing import Any, Optional
 log = logging.getLogger(__name__)
@@ -237,14 +237,12 @@ class Registers:
                     skipped_by_level += 1
                     continue
 
-                # The Modbus client and the MQTT client each mutate their entries at
-                # runtime (last_scrape, last_set_value, dynamic max, template context),
-                # so every list gets its own deep copy instead of a shared dict.
+                # Assignment to HA Discovery list
                 if sensor_type in ha_sensor_lists:
-                    ha_sensor_lists[sensor_type].append(copy.deepcopy(instance.__dict__))
+                    ha_sensor_lists[sensor_type].append(instance.__dict__)
 
                 if sensor_type in modbus_sensor_lists:
-                    modbus_sensor_lists[sensor_type].append(copy.deepcopy(instance.__dict__))
+                    modbus_sensor_lists[sensor_type].append(instance.__dict__)
 
         
         # Pass to subsystems

@@ -96,16 +96,11 @@ def poll_and_publish(inverter: Any, export: Any, current_time: float) -> bool:
     Returns True if at least one block was actually read this cycle.'''
     # First, handle any pending write commands from MQTT
     export.handle_writes(inverter)
-    # Publish the retained status only on a transition (not on every 0.1s tick).
-    # Status is only marked online once the publish was actually accepted, so a
-    # failed/disconnected attempt is retried on the next tick.
-    if export.status != 'online':
-        try:
-            info = export.mqtt_client.publish(export.config['topic'], 'online', retain=True)
-            if getattr(info, 'rc', 0) == 0:
-                export.status = 'online'
-        except Exception as publish_err:
-            logging.warning(f'MQTT: Failed to publish status online: {publish_err}')
+    export.status = 'online'
+    try:
+        export.mqtt_client.publish(export.config['topic'], 'online', retain=True)
+    except Exception as publish_err:
+        logging.warning(f'MQTT: Failed to publish status online: {publish_err}')
 
     # Only re-render templates and republish the full snapshot when a block was
     # actually read this cycle - avoids recompiling every Jinja template and
