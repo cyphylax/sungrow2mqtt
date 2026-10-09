@@ -44,34 +44,59 @@ class FakeMqttClient:
 
 
 class FakeExport:
-    def __init__(self, connected=True):
+    def __init__(self, connected=True, topic="Sungrow/TEST123"):
         self.mqtt_client = FakeMqttClient(connected)
-        self.config = {"topic": "Sungrow/TEST123"}
+        self.config = {"topic": topic}
 
 
-class FakeInverter:
+class FakeModbusClient:
     def __init__(self):
         self.closed = False
-        self.last_scrape = {f"sensor_{i}": i for i in range(5)}
 
     def close(self):
         self.closed = True
 
 
-def test_shutdown_handler_publishes_offline_and_closes_cleanly(app_module):
-    inverter = FakeInverter()
-    export = FakeExport()
+class FakeInverter:
+    def __init__(self, host="192.0.2.10", port=502, slave=1, serial="SN1"):
+        self.client_config = {"host": host, "port": port, "slave": slave}
+        self.serial_number = serial
+        self.label = serial
+        self.last_scrape = {f"sensor_{i}": i for i in range(5)}
 
-    app_module.install_shutdown_handler(inverter, export)
+    def create_modbus_client(self):
+        return FakeModbusClient()
+
+
+class FakeConnection:
+    def __init__(self):
+        self.disconnected = False
+
+    def disconnect(self):
+        self.disconnected = True
+
+
+def _runtime(app_module, contexts):
+    return app_module.Runtime({"mqtt": {}}, contexts, FakeConnection())
+
+
+def test_shutdown_handler_publishes_offline_and_closes_cleanly(app_module):
+    first = app_module.InverterContext(FakeInverter(serial="SN1"), primary=True)
+    first.export = FakeExport(topic="Sungrow/SN1")
+    second = app_module.InverterContext(FakeInverter(host="192.0.2.11", serial="SN2"))
+    second.export = FakeExport(topic="Sungrow/SN2")
+    runtime = _runtime(app_module, [first, second])
+
+    app_module.install_shutdown_handler(runtime)
 
     with pytest.raises(SystemExit) as exc_info:
         os.kill(os.getpid(), signal.SIGTERM)
 
     assert exc_info.value.code == 0
-    assert export.mqtt_client.published == [("Sungrow/TEST123", "offline", True)]
-    assert export.mqtt_client.disconnected is True
-    assert export.mqtt_client.loop_stopped is True
-    assert inverter.closed is True
+    assert first.export.mqtt_client.published == [("Sungrow/SN1", "offline", True)]
+    assert second.export.mqtt_client.published == [("Sungrow/SN2", "offline", True)]
+    assert runtime.connection.disconnected is True
+    assert all(e["client"].closed for e in runtime.endpoints.values())
 
     # Restore default handling so later tests / the process aren't affected.
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
@@ -80,19 +105,20 @@ def test_shutdown_handler_publishes_offline_and_closes_cleanly(app_module):
 def test_shutdown_handler_survives_broken_mqtt(app_module):
     """A shutdown must still close the Modbus client even if publishing the
     offline status itself fails."""
-    inverter = FakeInverter()
-    export = FakeExport()
+    ctx = app_module.InverterContext(FakeInverter(), primary=True)
+    ctx.export = FakeExport()
 
     def _raise(*a, **k):
         raise RuntimeError("broker unreachable")
 
-    export.mqtt_client.publish = _raise
+    ctx.export.mqtt_client.publish = _raise
+    runtime = _runtime(app_module, [ctx])
 
-    app_module.install_shutdown_handler(inverter, export)
+    app_module.install_shutdown_handler(runtime)
     with pytest.raises(SystemExit):
         os.kill(os.getpid(), signal.SIGINT)
 
-    assert inverter.closed is True
+    assert all(e["client"].closed for e in runtime.endpoints.values())
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 

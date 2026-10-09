@@ -5,7 +5,10 @@
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- **Multiple inverters**: the new `additional_inverters` option lists further inverters (`host`, optional `port`, `slave`, `winet_connection`, `name`). Each one is published under its own `Sungrow/<serial>` topics and gets its own Home Assistant device; `name` sets the device name. Inverters behind the same Modbus endpoint (`host`, `port`), e.g. a data logger addressing several inverters by slave ID, share one Modbus connection and are polled in turn; different endpoints are polled in parallel threads. All inverters share one MQTT connection. Inverters unreachable at startup are retried in the background; a serial number that is already in use is rejected. Existing configurations need no change, and the first inverter keeps its topics and entity IDs.
 #### Fixed
+- **Unreachable inverter stayed `online`**: when every Modbus read failed, the add-on kept reporting `online` and retried on every 0.1 s loop tick. It now reports `offline` once every due read failed and nothing was read for 60 seconds, and waits 10 s, 30 s, then 60 s between attempts until the inverter answers again.
 - **Availability status flooded the broker**: the retained `online` status on `Sungrow/<serial>` was published on every main loop tick, up to about ten times per second (once per 0.1 s idle tick), even when nothing was polled. It is now only published when the status changes (`online`/`offline`) and once more after each MQTT (re)connect, so it is restored after a broker restart that lost retained messages.
 #### Changed
 - **HA entities belong to the inverter**: the register entries and Home Assistant entities, including their runtime state (poll timestamps, pending set commands, dynamic limits), are now owned by the inverter object (`inverter.registers`, `inverter.ha_sensors`) instead of being split between the Modbus and MQTT clients. `Registers` no longer takes the MQTT client. No behaviour change for a single inverter; this is groundwork for multi-inverter support (concept: `docs/multi-inverter.md`).

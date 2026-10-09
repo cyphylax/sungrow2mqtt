@@ -62,12 +62,17 @@ def test_initial_offline_is_published(export):
 
 
 def test_status_republished_after_reconnect(export):
+    import modules.mqtt as mqtt
+    connection = mqtt.Connection()
+    connection.mqtt_client = export.mqtt_client
+    connection.publishers = [export]
     export.set_status("online")
-    export.on_connect(export.mqtt_client, None, None, 0, None)
+    connection.on_connect(export.mqtt_client, None, None, 0, None)
     export.set_status("online")
     export.set_status("online")
 
     assert [p[1] for p in export.mqtt_client.published] == ["online", "online"]
+    assert export.mqtt_client.subscribed == ["Sungrow/TEST123/+/set"]
 
 
 def test_status_retried_while_not_connected(export):
