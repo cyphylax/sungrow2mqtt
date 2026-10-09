@@ -6,6 +6,7 @@
 
 ### [Unreleased]
 #### Changed
+- **HA entities belong to the inverter**: the register entries and Home Assistant entities, including their runtime state (poll timestamps, pending set commands, dynamic limits), are now owned by the inverter object (`inverter.registers`, `inverter.ha_sensors`) instead of being split between the Modbus and MQTT clients. `Registers` no longer takes the MQTT client. No behaviour change for a single inverter; this is groundwork for multi-inverter support (concept: `docs/multi-inverter.md`).
 - **Changelog on `main` without `[Unreleased]`**: the release workflow no longer leaves an empty `[Unreleased]` heading on `main` (it showed up in the add-on's changelog in Home Assistant). The heading now only exists on `developement`, where the workflow re-adds it after each release.
 
 ### [1.2.2] - 2026-10-07

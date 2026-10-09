@@ -26,14 +26,14 @@ def real_modbus_sensors(registers):
     ],
 )
 def test_scan_level_sensor_counts(configured_registers, level, expected_count):
-    registers, inverter, export = configured_registers(scan_level=level)
+    registers, inverter = configured_registers(scan_level=level)
     assert len(real_modbus_sensors(registers)) == expected_count
 
 
 def test_basic_is_a_subset_of_standard_is_a_subset_of_full(configured_registers):
-    basic, _, _ = configured_registers(scan_level="BASIC")
-    standard, _, _ = configured_registers(scan_level="STANDARD")
-    full, _, _ = configured_registers(scan_level="FULL")
+    basic, _ = configured_registers(scan_level="BASIC")
+    standard, _ = configured_registers(scan_level="STANDARD")
+    full, _ = configured_registers(scan_level="FULL")
 
     basic_ids = {s["unique_id"] for s in real_modbus_sensors(basic)}
     standard_ids = {s["unique_id"] for s in real_modbus_sensors(standard)}
@@ -56,7 +56,7 @@ def test_essential_registers_always_present(configured_registers, level):
     """These back internal bootstrapping (serial/model detection) and switch
     state read-back (see scan_levels.yaml comments) - must never be filtered
     out regardless of level, or configure_inverter()/switch feedback breaks."""
-    registers, inverter, export = configured_registers(scan_level=level)
+    registers, inverter = configured_registers(scan_level=level)
     ids = {s["unique_id"] for s in real_modbus_sensors(registers)}
     assert ESSENTIAL_IDS <= ids
 
@@ -65,8 +65,8 @@ def test_essential_registers_always_present(configured_registers, level):
 def test_switches_are_never_filtered_by_scan_level(configured_registers, level):
     """Switches are cheap (3 entries) and control-critical - scan.level only
     trims plain Modbus sensors, never switches or template/control entities."""
-    registers, inverter, export = configured_registers(scan_level=level)
-    switch_names = {s.get("unique_id") for s in export.ha_sensors.get("switch", [])}
+    registers, inverter = configured_registers(scan_level=level)
+    switch_names = {s.get("unique_id") for s in inverter.ha_sensors.get("switch", [])}
     assert {"backup_mode_switch", "export_power_limit_switch", "load_adjustment_mode_switch"} <= switch_names
 
 
