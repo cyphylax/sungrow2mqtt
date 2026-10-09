@@ -5,6 +5,8 @@
 ## Changelog
 
 ### [Unreleased]
+#### Fixed
+- **Availability status flooded the broker**: the retained `online` status on `Sungrow/<serial>` was published on every main loop tick, up to about ten times per second (once per 0.1 s idle tick), even when nothing was polled. It is now only published when the status changes (`online`/`offline`) and once more after each MQTT (re)connect, so it is restored after a broker restart that lost retained messages.
 #### Changed
 - **Changelog on `main` without `[Unreleased]`**: the release workflow no longer leaves an empty `[Unreleased]` heading on `main` (it showed up in the add-on's changelog in Home Assistant). The heading now only exists on `developement`, where the workflow re-adds it after each release.
 
