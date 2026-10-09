@@ -73,3 +73,13 @@ def test_switches_are_never_filtered_by_scan_level(configured_registers, level):
 def test_invalid_scan_level_falls_back_to_full(build_inverter):
     inverter = build_inverter(scan_level="NONSENSE")
     assert inverter.scan_level == "FULL"
+
+
+def test_modbus_and_ha_entries_do_not_share_runtime_state(configured_registers):
+    registers, inverter, export = configured_registers(scan_level="FULL")
+    modbus = inverter.registers["sensor"][0]
+    ha = next(s for s in export.ha_sensors["sensor"] if s["unique_id"] == modbus["unique_id"])
+    assert modbus is not ha
+    assert modbus["raw_config"] is not ha["raw_config"]
+    modbus["last_scrape"] = 123.0
+    assert "last_scrape" not in ha
