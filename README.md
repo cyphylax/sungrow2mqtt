@@ -14,9 +14,7 @@ The project uses the register definitions from [mkaiser/Sungrow-SHx-Inverter-Mod
 *   **Automatic Updates**: Downloads the latest `modbus_sungrow.yaml` from GitHub on startup, if available.
 *   **Write Access**: Control the inverter (e.g., force battery charging) via MQTT.
 *   **Scan Level**: Reduce Modbus polling load by choosing `BASIC`, `STANDARD` or `FULL` (all registers).
-
-## Planned Features
-*   **Multi-Inverter Support**: Support for multiple inverters in a single instance.
+*   **Multiple Inverters**: Poll several inverters from one add-on instance, each as its own Home Assistant device (see `additional_inverters`).
 
 ## Installation
 1. **Add Repository**: Navigate to **Settings** > **Add-ons** > **Add-on Store**.
@@ -38,6 +36,33 @@ Configuration is done via the "Configuration" tab in the add-on.
 | `port` | Modbus TCP port (usually 502). | `502` |
 | `slave` | Slave/unit ID of your inverter. | `1` |
 | `winet_connection` | Ignore any registers that are not usable with the WiNET-S/WiNET-S2 module. | `false` |
+
+**Additional inverters** (optional)
+
+`additional_inverters` is a list; each entry describes one more inverter with the same keys as `inverter`, plus an optional `name`. Leave it empty (`[]`) for a single inverter; existing configurations keep working unchanged.
+
+| Option | Description | Default |
+| :--- | :--- | :--- |
+| `host` | IP address or hostname of the inverter, its WiNet-S dongle, or a data logger in front of it. | `-` |
+| `port` | Modbus TCP port. | `502` |
+| `slave` | Slave/unit ID. Inverters behind the same data logger share `host` and `port` and differ only here. | `1` |
+| `winet_connection` | Same as for `inverter`. | `false` |
+| `name` | Name of the device in Home Assistant. Without it the device is called `Sungrow <model>`, which is ambiguous if two inverters are the same model. | `-` |
+
+```yaml
+additional_inverters:
+  - host: 192.168.1.51
+    name: Garage
+  - host: 192.168.1.60   # data logger, second inverter on its RS485 bus
+    slave: 2
+```
+
+How it works:
+- Every inverter is published under its own serial number (`Sungrow/<serial>/...`) and appears as its own device. The first inverter keeps its topics and entity IDs.
+- Inverters with the same `host` and `port` share one Modbus connection and are polled one after another; different endpoints are polled in parallel. A slow or unreachable inverter therefore only delays the inverters behind the same endpoint.
+- An inverter that is unreachable at startup is retried in the background (after 10 s, 30 s, then every 60 s); the others start normally. The add-on only stops if none of the configured inverters answers at startup. With only `inverter` configured, startup behaves as before (5 attempts to read the serial number, then stop).
+- If the same inverter is configured twice (for example via LAN port and WiNet-S), the second entry reports the same serial number and is ignored with an error in the log.
+- `scan`, `mqtt` and `log_level` apply to all inverters.
 
 **MQTT**
 | Option | Description | Default |

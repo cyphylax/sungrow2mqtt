@@ -12,18 +12,29 @@ from pymodbus.client.sync import ModbusTcpClient
 # Startup read of the serial number (see configure_inverter)
 SERIAL_READ_ATTEMPTS = 5
 SERIAL_READ_RETRY_DELAY = 10  # seconds
+# An inverter counts as unreachable once every due block of a poll cycle failed
+# and nothing at all was read for this long. A single register that always
+# fails (e.g. not supported by the model) never makes it unreachable on its own,
+# because the other blocks keep succeeding.
+UNREACHABLE_AFTER_SECONDS = 60
 log = logging.getLogger(__name__)
 class Client:
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, inverter_config: Optional[dict] = None) -> None:
+        # inverter_config: one entry of the inverter list (the `inverter` option or an
+        # `additional_inverters` item); defaults to the `inverter` option.
+        if inverter_config is None:
+            inverter_config = config['inverter']
+        # Optional display name (HA device name), empty for the `inverter` option.
+        self.name = (inverter_config.get('name') or '').strip()
         self.client_config = {
-            "host": config['inverter'].get('host'),
-            "port": config['inverter'].get('port'),
+            "host": inverter_config.get('host'),
+            "port": inverter_config.get('port'),
             "timeout": config['scan'].get('timeout', 30), 
             "retries": config['scan'].get("retries", 3),
             "delay": config['scan'].get("delay", 5),
             "message_wait": config['scan'].get("message_wait", 0.1),  # seconds
-            "winet_connection": config['inverter'].get('winet_connection'),
-            "slave": config['inverter'].get('slave', 1),
+            "winet_connection": inverter_config.get('winet_connection'),
+            "slave": inverter_config.get('slave', 1),
             # pymodbus's actual kwarg is "retry_on_empty" (snake_case); the previous
             # "RetryOnEmpty" key was never read by pymodbus and had no effect.
             "retry_on_empty": False
@@ -40,10 +51,21 @@ class Client:
             log.warning(f"Unknown scan.level '{self.scan_level}', falling back to FULL")
             self.scan_level = 'FULL'
         self.client = None
+        # False when the Modbus connection is shared with other inverters behind the
+        # same endpoint; then close() leaves it open for them.
+        self._owns_client = True
+        self._polling_prepared = False
+        # Number of due blocks in the last poll_blocks() call, and how many failed.
+        self.last_poll_due = 0
+        self.last_poll_failed = 0
+        self.last_successful_read = None
         self.serial_number = None
         self.model = None
         self.inverter_config = {}
         self.registers = {}
+        # HA entities of this inverter, populated by Registers.configure(). Owned
+        # by the inverter (not the MQTT client) so every inverter has its own set.
+        self.ha_sensors = {}
         self.address_lookup = {}
         self.read_blocks = {}
         self.last_scrape = {}
@@ -115,7 +137,26 @@ class Client:
             self._template_cache[source] = template
         return template
 
-    def configure_inverter(self) -> None:
+    @property
+    def label(self) -> str:
+        """Human-readable identifier for log lines: name, else serial, else endpoint."""
+        if self.name:
+            return self.name
+        if self.serial_number:
+            return str(self.serial_number)
+        return f"{self.client_config['host']}:{self.client_config['port']}/{self.client_config['slave']}"
+
+    def configure_inverter(self, modbus_client: Any = None, serial_attempts: int = SERIAL_READ_ATTEMPTS) -> None:
+        """Prepares polling, connects (or reuses the shared `modbus_client` of this
+        endpoint) and reads serial number and model."""
+        self.prepare_polling()
+        self.connect(modbus_client)
+        self.identify(serial_attempts)
+
+    def prepare_polling(self) -> None:
+        """Builds the address lookup and read blocks. Runs once per inverter."""
+        if self._polling_prepared:
+            return
         blacklist = {}
         if self.client_config['winet_connection']:
             log.info("WiNET-S connection selected, cleanup address lookup to use with WiNET-S.")
@@ -156,15 +197,30 @@ class Client:
 
         self._build_read_blocks()
         self._log_polling_plan()
+        self._polling_prepared = True
 
+    def create_modbus_client(self) -> Any:
+        """Creates (not connects) the Modbus TCP client for this inverter's endpoint."""
         log.info(f"Configuring Modbus TCP client for {self.client_config['host']}:{self.client_config['port']}")
-        self.client = ModbusTcpClient(
+        return ModbusTcpClient(
             self.client_config['host'],
             port=self.client_config['port'],
             timeout=self.client_config['timeout'],
             retries=self.client_config['retries'],
             retry_on_empty=self.client_config['retry_on_empty']
         )
+
+    def connect(self, modbus_client: Any = None) -> None:
+        """Connects to the inverter. With `modbus_client`, the endpoint's shared client
+        is used; if it is already connected, neither connect nor scan.delay is repeated."""
+        if modbus_client is not None:
+            self.client = modbus_client
+            self._owns_client = False
+            is_open = getattr(modbus_client, 'is_socket_open', None)
+            if callable(is_open) and is_open():
+                return
+        elif self.client is None:
+            self.client = self.create_modbus_client()
 
         try:
             if not self.client.connect():
@@ -179,25 +235,28 @@ class Client:
             log.info(f"Waiting {connect_delay}s after connecting before the first read (scan.delay)...")
             time.sleep(connect_delay)
 
+    def identify(self, attempts: int = SERIAL_READ_ATTEMPTS) -> None:
+        """Reads serial number and model, retrying up to `attempts` times."""
         # The serial number becomes the MQTT topic (Sungrow/<serial>), the
         # discovery node_id and the HA device identifier. If the initial read
         # fails, carrying on would publish retained discovery configs for a
         # separate "Sungrow None" device under Sungrow/None - so retry, and
         # stop instead of publishing under a missing serial.
-        for attempt in range(1, SERIAL_READ_ATTEMPTS + 1):
+        for attempt in range(1, attempts + 1):
             try:
                 self._read_register_value()
             except Exception as e:
                 log.error(f"Error reading initial register values: {e}")
                 raise
             if self.serial_number:
+                self.last_successful_read = time.time()
                 break
-            if attempt < SERIAL_READ_ATTEMPTS:
-                log.warning(f"Could not read the inverter serial number (attempt {attempt}/{SERIAL_READ_ATTEMPTS}), retrying in {SERIAL_READ_RETRY_DELAY}s...")
+            if attempt < attempts:
+                log.warning(f"Could not read the inverter serial number (attempt {attempt}/{attempts}), retrying in {SERIAL_READ_RETRY_DELAY}s...")
                 time.sleep(SERIAL_READ_RETRY_DELAY)
         else:
             raise RuntimeError(
-                f"Could not read the inverter serial number after {SERIAL_READ_ATTEMPTS} attempts; "
+                f"Could not read the inverter serial number after {attempts} attempt(s); "
                 "not publishing to MQTT without it. Check the Modbus connection to the inverter."
             )
         log.info(f'Inverter configured successfully. Model: {self.model}, Serial Number: {self.serial_number}')
@@ -378,15 +437,30 @@ class Client:
         self._build_read_blocks(current_time=current_time)
         wait_seconds = self.client_config.get('message_wait', 0.1)
         polled_any = False
+        self.last_poll_due = 0
+        self.last_poll_failed = 0
         for register_type, blocks in self.read_blocks.items():
             for block in blocks:
+                self.last_poll_due += 1
                 if self.load_register_block(register_type, block['start'], block['count'], block['regs']):
                     polled_any = True
+                    self.last_successful_read = time.time()
                     for reg in block['regs']:
                         reg['last_scrape'] = current_time
                     if wait_seconds > 0:
                         time.sleep(wait_seconds)
+                else:
+                    self.last_poll_failed += 1
         return polled_any
+
+    def is_unreachable(self) -> bool:
+        """True if every due block of the last poll_blocks() call failed and no
+        read succeeded for UNREACHABLE_AFTER_SECONDS."""
+        if not self.last_poll_due or self.last_poll_failed < self.last_poll_due:
+            return False
+        if self.last_successful_read is None:
+            return True
+        return time.time() - self.last_successful_read >= UNREACHABLE_AFTER_SECONDS
 
     def validateRegister(self, unique_id: str) -> bool:
         """Validates if a register unique_id is defined in the address lookup."""
@@ -693,7 +767,7 @@ class Client:
 
     def close(self) -> None:
         try:
-            if self.client:
+            if self.client and self._owns_client:
                 self.client.close()
                 log.info("Modbus client connection closed")
         except Exception as e:
