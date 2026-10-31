@@ -23,6 +23,8 @@ The project uses the register definitions from [mkaiser/Sungrow-SHx-Inverter-Mod
 4. **Install**: Search for "Sungrow2MQTT" and click **Install**.
 5. **Configuration**: Adjust the settings (see below) and start the add-on.
 
+Running without Home Assistant? See [docs/standalone-docker.md](docs/standalone-docker.md) for a standalone Docker setup.
+
 ---
 ## Configuration
 Configuration is done via the "Configuration" tab in the add-on.
