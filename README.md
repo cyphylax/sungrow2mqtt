@@ -14,7 +14,7 @@ The project uses the register definitions from [mkaiser/Sungrow-SHx-Inverter-Mod
 *   **Automatic Updates**: Downloads the latest `modbus_sungrow.yaml` from GitHub on startup, if available.
 *   **Write Access**: Control the inverter (e.g., force battery charging) via MQTT.
 *   **Scan Level**: Reduce Modbus polling load by choosing `BASIC`, `STANDARD` or `FULL` (all registers).
-*   **Multiple Inverters**: Poll several inverters from one add-on instance, each as its own Home Assistant device (see `additional_inverters`).
+*   **Multiple Inverters**: Poll several inverters from one add-on instance, each as its own Home Assistant device (see `additional_inverters`; design notes in [docs/multi-inverter.md](docs/multi-inverter.md)).
 
 ## Installation
 1. **Add Repository**: Navigate to **Settings** > **Add-ons** > **Add-on Store**.
