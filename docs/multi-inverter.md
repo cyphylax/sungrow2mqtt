@@ -1,8 +1,9 @@
 # Concept: multiple inverters
 
-Status: **draft concept, nothing implemented yet.** This page describes where
-sungrow2mqtt currently assumes exactly one inverter, three ways to support
-several, and a recommended path.
+Status: **implemented** (variant A with `additional_inverters`, PRs #33, #34
+and #35; tested on a development instance on 2026-10-31). This page records
+where sungrow2mqtt assumed exactly one inverter, the variants that were
+considered, and why variant A was chosen. For configuration, see the README.
 
 Decided on 2026-10-08: the configuration keeps the existing `inverter` block
 and adds an `additional_inverters` list (option 1 in
