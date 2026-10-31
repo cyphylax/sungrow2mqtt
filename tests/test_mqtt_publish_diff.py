@@ -30,6 +30,7 @@ class FakeInverter:
         self.last_scrape = last_scrape
         self.model = model
         self.serial_number = serial_number
+        self.ha_sensors = {}
 
         class _FakeClient:
             host = "192.0.2.10"
@@ -107,8 +108,9 @@ def test_discovery_device_has_no_via_device(mqtt_client):
     import json
     mqtt_client.config["homeassistant"] = True
     mqtt_client.model, mqtt_client.serial_number = "SH10RT", "SN1"
-    mqtt_client.ha_sensors = {"sensor": [{"name": "Load", "sensor_type": "sensor", "unique_id": "load_power"}]}
-    mqtt_client.publish(FakeInverter({}))
+    inverter = FakeInverter({})
+    inverter.ha_sensors = {"sensor": [{"name": "Load", "sensor_type": "sensor", "unique_id": "load_power"}]}
+    mqtt_client.publish(inverter)
 
     configs = [json.loads(p) for t, p in mqtt_client.mqtt_client.published if t.startswith("homeassistant/")]
     assert configs
