@@ -13,14 +13,6 @@ if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
 
-class FakeMqttExport:
-    """Minimal stand-in for modules.mqtt.Client, just enough for
-    modules.register.Registers to populate ha_sensors during configure()."""
-
-    def __init__(self):
-        self.ha_sensors = {}
-
-
 def make_inverter(sungrow_module, *, scan_level="FULL", scan_interval=None, winet_connection=False):
     """Builds a real modules.sungrow.Client without touching the network."""
     config = {
@@ -55,11 +47,6 @@ def register_file_path():
 
 
 @pytest.fixture
-def fake_export():
-    return FakeMqttExport()
-
-
-@pytest.fixture
 def build_inverter(sungrow_module):
     def _build(**kwargs):
         return make_inverter(sungrow_module, **kwargs)
@@ -67,17 +54,16 @@ def build_inverter(sungrow_module):
 
 
 @pytest.fixture
-def configured_registers(register_module, register_file_path, fake_export, build_inverter):
+def configured_registers(register_module, register_file_path, build_inverter):
     """Loads the real stock register file through modules.register.Registers,
     against a real (but network-free) modules.sungrow.Client. Returns a
-    (registers, inverter, export) tuple. Callers can pass build_inverter kwargs
+    (registers, inverter) tuple; the HA entities are in inverter.ha_sensors. Callers can pass build_inverter kwargs
     via the `level`/`interval` params."""
 
     def _configure(**inverter_kwargs):
         inverter = build_inverter(**inverter_kwargs)
-        export = FakeMqttExport()
-        registers = register_module.Registers(register_file_path, inverter, export)
+        registers = register_module.Registers(register_file_path, inverter)
         registers.configure()
-        return registers, inverter, export
+        return registers, inverter
 
     return _configure

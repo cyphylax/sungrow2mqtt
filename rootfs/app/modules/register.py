@@ -99,9 +99,12 @@ class TemplateEntity(SungrowRegister):
         self.write_map = config_dict.get('variables', {}).get('map', {})
 
 class Registers:
-    def __init__(self, registerfile: str, inverter: Any, mqtt_client: Any):
+    def __init__(self, registerfile: str, inverter: Any):
+        # Each inverter gets its own Registers instance, which parses the register
+        # file itself: the entries carry per-inverter runtime state (poll
+        # timestamps, pending writes, dynamic limits) and the !secret values are
+        # resolved from this inverter's config.
         self.inverter = inverter
-        self.mqtt_client = mqtt_client
         self.registerfile_path = registerfile
         self.registerfile = None
 
@@ -247,7 +250,7 @@ class Registers:
         
         # Pass to subsystems
         self.inverter.registers = modbus_sensor_lists
-        self.mqtt_client.ha_sensors = ha_sensor_lists
+        self.inverter.ha_sensors = ha_sensor_lists
 
         modbus_total = sum(len(v) for v in modbus_sensor_lists.values())
         ha_total = sum(len(v) for v in ha_sensor_lists.values())
