@@ -4,7 +4,7 @@
 
 ## Changelog
 
-### [Unreleased]
+### [1.3.0] - 2026-10-31
 #### Added
 - **Multiple inverters**: the new `additional_inverters` option lists further inverters (`host`, optional `port`, `slave`, `winet_connection`, `name`). Each one is published under its own `Sungrow/<serial>` topics and gets its own Home Assistant device; `name` sets the device name. Inverters behind the same Modbus endpoint (`host`, `port`), e.g. a data logger addressing several inverters by slave ID, share one Modbus connection and are polled in turn; different endpoints are polled in parallel threads. All inverters share one MQTT connection. Inverters unreachable at startup are retried in the background; a serial number that is already in use is rejected. Existing configurations need no change, and the first inverter keeps its topics and entity IDs.
 #### Fixed
@@ -17,6 +17,15 @@
 - **Changelog on `main` without `[Unreleased]`**: the release workflow no longer leaves an empty `[Unreleased]` heading on `main` (it showed up in the add-on's changelog in Home Assistant). The heading now only exists on `developement`, where the workflow re-adds it after each release.
 #### Documentation
 - **Standalone Docker guide**: `docs/standalone-docker.md` explains how to build and run sungrow2mqtt as a plain Docker container without Home Assistant (`options.json`, `docker run`, Docker Compose, MQTT topics, updating, limitations).
+#### Merged pull requests
+- Bump the "weekly-dependencies" group with 1 update across multiple ecosystems (Week 41/2026) ([#30](https://github.com/cyphylax/sungrow2mqtt/pull/30))
+- Keep the [Unreleased] changelog heading on developement only ([#31](https://github.com/cyphylax/sungrow2mqtt/pull/31))
+- Docs: concept for multi-inverter support ([#32](https://github.com/cyphylax/sungrow2mqtt/pull/32))
+- Publish availability status only on change or reconnect ([#33](https://github.com/cyphylax/sungrow2mqtt/pull/33))
+- Keep register entries and HA entities on the inverter ([#34](https://github.com/cyphylax/sungrow2mqtt/pull/34))
+- Support several inverters via additional_inverters ([#35](https://github.com/cyphylax/sungrow2mqtt/pull/35))
+- Bump the "weekly-dependencies" group with 1 update across multiple ecosystems (Week 42/2026) ([#36](https://github.com/cyphylax/sungrow2mqtt/pull/36))
+- Standalone Docker: guide, option defaults and validation ([#38](https://github.com/cyphylax/sungrow2mqtt/pull/38))
 
 ### [1.2.2] - 2026-10-07
 #### Fixed
