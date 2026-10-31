@@ -12,10 +12,13 @@ For what each option means, see the [README](../README.md#configuration).
 
 > **Tested** on 2026-10-31, without a real inverter: config loading, startup
 > and failure messages, MQTT topics against a test broker and a simulated
-> Modbus server. The proxy in the test environment blocked the add-on base
-> image, so the app ran on `python:3.13-alpine` without s6-overlay and
-> bashio. Not tested: the image built from this repository's `Dockerfile`,
-> `TZ`, and a real inverter.
+> Modbus server. The option defaults and checks were tested the same day with
+> a minimal `options.json` (defaults filled in, app continues to the Modbus
+> connection), invalid values (listed, app stops with exit code 1) and invalid
+> JSON. The proxy in the test environment blocked the add-on base image, so
+> the app ran in a stand-in image on `python:3.13-alpine` without s6-overlay
+> and bashio. Not tested: the image built from this repository's
+> `Dockerfile`, `TZ`, and a real inverter.
 
 ## Requirements
 
@@ -63,8 +66,33 @@ Assistant, the Supervisor writes that file from the add-on options. Here you
 write it yourself and mount it into the container.
 
 Create `config/options.json` next to the clone (not inside it, so `git pull`
-leaves it alone). The example contains every option with its default from
-`config.yaml`; replace the hosts and credentials:
+leaves it alone). A minimal file only needs the inverter and the broker;
+replace the hosts and credentials:
+
+```json
+{
+  "inverter": {
+    "host": "192.168.1.50"
+  },
+  "mqtt": {
+    "host": "192.168.1.10",
+    "port": 1883,
+    "username": "sungrow",
+    "password": "CHANGE_ME",
+    "homeassistant": false
+  }
+}
+```
+
+Options missing from the file get the same defaults as the add-on. The app
+lists them in the log at startup:
+
+```
+[ INFO ] Options not set in /data/options.json, using the add-on defaults: inverter.port, inverter.slave, ...
+```
+
+All options with their defaults from `config.yaml` (with `homeassistant`
+already set to `false`):
 
 ```json
 {
@@ -104,15 +132,16 @@ chmod 600 config/options.json   # it contains the MQTT password
 
 Things to know:
 
-- It is JSON, not YAML. Keep all keys from the example. The `mqtt` and `scan`
-  objects are mandatory: without them the app stops at startup with
-  `KeyError: 'scan'` or `KeyError: 'mqtt'`. `inverter.host` and `mqtt.host`
-  must be set.
-- Nothing validates the file or fills in defaults, as the Supervisor would.
-  Keep values in the ranges the add-on allows: `scan.delay` 1-15,
-  `scan.timeout` 3-60, `scan.retries` 0-10, `scan.level` `BASIC`, `STANDARD`
-  or `FULL`, `scan.interval` `realtime` 1-5, `fast` 1-10, `medium` 30-60,
-  `slowest` 100-600, `log_level` `INFO`, `WARNING`, `ERROR` or `DEBUG`.
+- It is JSON, not YAML. `inverter.host` and `mqtt.host` must be set.
+- At startup the values are checked against the same rules as the add-on
+  options. Numbers must be JSON numbers (`1883`, not `"1883"`), switches
+  `true` or `false`. Invalid values are listed in the log and the app stops
+  (see [Logs and troubleshooting](#logs-and-troubleshooting)). Unknown keys,
+  e.g. typos, are logged as warnings and ignored.
+- Allowed ranges: `scan.delay` 1-15, `scan.timeout` 3-60, `scan.retries`
+  0-10, `scan.level` `BASIC`, `STANDARD` or `FULL`, `scan.interval`
+  `realtime` 1-5, `fast` 1-10, `medium` 30-60, `slowest` 100-600, `log_level`
+  `INFO`, `WARNING`, `ERROR` or `DEBUG`, ports 1-65535.
 - Set `mqtt.homeassistant` to `false` unless a Home Assistant instance uses
   the broker. With `true`, retained discovery messages are published under
   `homeassistant/...`.
@@ -135,8 +164,8 @@ docker run -d --name sungrow2mqtt \
 Optionally keep the log file on the host by adding
 `-v "$PWD/logs:/app/logs"`.
 
-Use a restart policy. If the inverter cannot be reached at startup, or a
-required option is missing, the app exits with an error, and the add-on's
+Use a restart policy. If the inverter cannot be reached at startup, or an
+option is invalid, the app exits with an error, and the add-on's
 service scripts then stop the container.
 
 The default bridge network is fine as long as the inverter and the broker are
@@ -201,6 +230,20 @@ the register file (e.g. `battery_level`).
 
 - `Config file not found: /data/options.json`: the file is not mounted at
   that path.
+- `Cannot read configuration: /data/options.json is not valid JSON: ...`: a
+  syntax error, e.g. a trailing comma. The message gives line and column.
+- `Invalid configuration in /data/options.json, stopping.`: the lines before
+  it name each invalid option, e.g.
+
+  ```
+  [ ERROR ] Invalid option: scan.delay: 20 is out of range (allowed 1-15)
+  [ ERROR ] Invalid option: mqtt.port: "1883" must be an integer
+  ```
+
+  Fix the values (allowed ranges under [Configuration](#configuration)) and
+  restart the container.
+- `Unknown option in /data/options.json: ...`: a key the app does not know,
+  usually a typo. The app keeps running, but the option has no effect.
 - `Could not connect to Modbus server` followed by a traceback: the inverter is
   not reachable from the container (IP, port 502, firewall, network mode).
 - Set `log_level` to `DEBUG` and restart the container to see the raw and
@@ -212,11 +255,12 @@ the register file (e.g. `battery_level`).
 
 ## Updating
 
-1. Read `CHANGELOG.md` for the new version first. `options.json` is not
-   migrated automatically, so compare it with the `options:` block in
-   `config.yaml` and adjust it yourself. Example: in 1.2.0, `scan.interval`
-   changed from a single number to the `realtime`/`fast`/`medium`/`slowest`
-   group.
+1. Read `CHANGELOG.md` for the new version first. New options get their
+   defaults, but `options.json` is not migrated automatically: if an option
+   changes its form, adjust it yourself (compare with the `options:` block in
+   `config.yaml`). Example: in 1.2.0, `scan.interval` changed from a single
+   number to the `realtime`/`fast`/`medium`/`slowest` group; the old form is
+   now reported as an invalid option at startup.
 2. Update the source and rebuild:
 
    ```sh
@@ -231,7 +275,6 @@ the register file (e.g. `battery_level`).
 
 - No prebuilt image: you build it yourself and rebuild for every update.
 - Configuration only through `/data/options.json`. No environment variables.
-- No validation of the options and no defaults for missing keys.
 - Only `amd64` and `aarch64` base images exist.
 - The image builds on the Home Assistant add-on base image, which starts the
   app via s6-overlay and bashio. The service scripts only use bashio's logging,

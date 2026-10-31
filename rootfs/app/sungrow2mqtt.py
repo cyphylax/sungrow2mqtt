@@ -1,5 +1,5 @@
 import logging, logging.handlers
-import time, pathlib, importlib, json, requests, yaml, signal, sys, threading
+import time, pathlib, importlib, requests, yaml, signal, sys, threading
 from typing import Any, Optional
 
 from modules.version import __version__
@@ -385,6 +385,7 @@ if __name__ == '__main__':
     sungrow = importlib.import_module('modules.sungrow')
     modbus = importlib.import_module('modules.register')
     mqtt = importlib.import_module('modules.mqtt')
+    options = importlib.import_module('modules.options')
 
 
     config_path = pathlib.Path('/data/options.json')
@@ -397,13 +398,31 @@ if __name__ == '__main__':
         logging.error(f'Config file not found: {config_path}')
         exit(1)
 
-    with open(config_path) as f:
-        config = json.load(f)
+    # Fills in the add-on defaults and checks the values, as the Supervisor
+    # does under Home Assistant (needed when run standalone, see
+    # docs/standalone-docker.md).
+    try:
+        config, defaulted = options.load(config_path)
+    except (options.OptionsError, OSError) as err:
+        logging.error(f'Cannot read configuration: {err}')
+        exit(1)
+    errors = options.validate(config)
 
-    logging_setup(config)
+    # An invalid log_level must not stop the logging setup itself.
+    logging_setup(config if not errors else {**config, 'log_level': 'INFO'})
     logging.info('*** Sungrow2mqtt ***')
     logging.info(f'*** Version {__version__} ***')
     logging.info('*** Created by Cyphylax ***')
+
+    if defaulted:
+        logging.info(f'Options not set in {config_path}, using the add-on defaults: {", ".join(defaulted)}')
+    for key in options.unknown_keys(config):
+        logging.warning(f'Unknown option in {config_path}: {key} (ignored; check for a typo)')
+    if errors:
+        for error in errors:
+            logging.error(f'Invalid option: {error}')
+        logging.error(f'Invalid configuration in {config_path}, stopping.')
+        exit(1)
 
     ### __init__ ###
     logging.info('Loading configuration and initializing clients...')
