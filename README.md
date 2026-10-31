@@ -16,7 +16,7 @@ The project uses the register definitions from [mkaiser/Sungrow-SHx-Inverter-Mod
 *   **Scan Level**: Reduce Modbus polling load by choosing `BASIC`, `STANDARD` or `FULL` (all registers).
 
 ## Planned Features
-*   **Multi-Inverter Support**: Support for multiple inverters in a single instance.
+*   **Multi-Inverter Support**: Support for multiple inverters in a single instance (concept: [docs/multi-inverter.md](docs/multi-inverter.md)).
 
 ## Installation
 1. **Add Repository**: Navigate to **Settings** > **Add-ons** > **Add-on Store**.
