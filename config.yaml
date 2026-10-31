@@ -13,6 +13,7 @@ options:
     port: 502
     slave: 1
     winet_connection: false
+  additional_inverters: []
   mqtt:
     host: ""
     port: 1883
@@ -36,6 +37,12 @@ schema:
     port: port
     slave: int
     winet_connection: bool
+  additional_inverters:
+    - host: str
+      port: "port?"
+      slave: "int?"
+      winet_connection: "bool?"
+      name: "str?"
   mqtt:
     host: str
     port: port
