@@ -766,9 +766,12 @@ class Client:
             return False
 
     def close(self) -> None:
+        # getattr: __del__ also runs this when __init__ failed before the
+        # attributes were set; then there is nothing to close.
+        client = getattr(self, 'client', None)
         try:
-            if self.client and self._owns_client:
-                self.client.close()
+            if client and getattr(self, '_owns_client', True):
+                client.close()
                 log.info("Modbus client connection closed")
         except Exception as e:
             log.error(f"Error closing Modbus client: {e}", exc_info=True)
