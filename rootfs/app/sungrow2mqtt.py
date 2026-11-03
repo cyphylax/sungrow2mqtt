@@ -438,6 +438,17 @@ if __name__ == '__main__':
         # Each inverter parses the register file itself: entries carry its own
         # runtime state and !secret values resolve from its own config.
         modbus.Registers(register_path, inverter).configure()
+        # Dry-Run: read Device-Type-Code register 4999 and log
+        try:
+            inverter.connect()
+            dev_reg = {'address': 4999, 'input_type': 'input', 'data_type': 'uint16', 'count': 1, 'unique_id': 'sg_dev_code_tmp'}
+            if inverter.load_registers(dev_reg):
+                code = inverter.last_scrape.get('sg_dev_code_tmp')
+                logging.info(f'Dry-Run Device-Type-Code Register 4999 for {inverter.label}: {code} (0x{code:04X})')
+            else:
+                logging.warning(f'Dry-Run Device-Type-Code Register 4999 read failed for {inverter.label}')
+        except Exception as e:
+            logging.warning(f'Dry-Run Device-Type-Code read error for {inverter.label}: {e}')
         inverter.prepare_polling()
         contexts.append(InverterContext(inverter, primary=(index == 0)))
 

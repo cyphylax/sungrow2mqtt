@@ -1,0 +1,25 @@
+# Model-specific blacklist configuration
+# Each model defines blacklisted Modbus addresses (hex values with 0x prefix)
+# Key is the model name (e.g., SH15T, SH10RT)
+# Values are lists of addresses to exclude.
+# Format: address in hex (e.g., 0x1234)
+# Example: blacklist addresses listed under a model will be skipped during polling.
+# To create a default empty blacklist, use an empty list for each model.
+# Empty model sections (defaults) can be omitted.
+
+# Example SH15T blacklist
+SH15T:
+  # blacklisted_registers:
+  #   - 0x1234
+  #   - 0x5678
+
+# Example SH10RT blacklist
+SH10RT:
+  # blacklisted_registers:
+  #   - 0x1111
+  #   - 0x2222
+
+# HSM-3520 (newer models)
+XNHSM3520:
+  # blacklisted_registers:
+  #   - 0x3333
