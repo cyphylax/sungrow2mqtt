@@ -1,25 +1,40 @@
-# Model-specific blacklist configuration
-# Each model defines blacklisted Modbus addresses (hex values with 0x prefix)
-# Key is the model name (e.g., SH15T, SH10RT)
-# Values are lists of addresses to exclude.
-# Format: address in hex (e.g., 0x1234)
-# Example: blacklist addresses listed under a model will be skipped during polling.
-# To create a default empty blacklist, use an empty list for each model.
-# Empty model sections (defaults) can be omitted.
+# Model-specific register blacklist.
+#
+# Some inverter models (or their firmware / WiNET-S dongle combination) do not
+# answer certain Modbus registers. Polling them fails on every cycle and floods
+# the log. Registers listed here for a model are excluded from polling once the
+# inverter has been identified.
+#
+# Format:
+#   <model>:
+#     - "<address>:<input|holding>"
+#
+#   <model>    Exact model name as logged at startup
+#              ("Inverter configured successfully. Model: SH15T, ...").
+#   <address>  Decimal Modbus address as used in the register file
+#              (modbus_sungrow.yaml), same as in the generic `blacklist` file.
+#   input / holding
+#              Register type (input_type in the register file).
+#   Quote every entry. Invalid entries are skipped with a warning.
+#
+# Rules:
+#   - If the identified model has an entry here, ONLY this list is excluded,
+#     regardless of winet_connection. The generic WiNET-S `blacklist` file is
+#     NOT used for that model.
+#   - A model listed without entries (`SH10RT:` alone) excludes nothing.
+#   - Models not listed here keep the default behaviour: the generic WiNET-S
+#     `blacklist` when winet_connection is enabled, nothing otherwise.
+#   - Until the model is known (serial and device type read at startup), the
+#     default behaviour applies.
 
-# Example SH15T blacklist
+# SH15T behind WiNET-S (firmware WINET-SV300.001.03.P033), issues #40, #41, #42.
 SH15T:
-  # blacklisted_registers:
-  #   - 0x1234
-  #   - 0x5678
-
-# Example SH10RT blacklist
-SH10RT:
-  # blacklisted_registers:
-  #   - 0x1111
-  #   - 0x2222
-
-# HSM-3520 (newer models)
-XNHSM3520:
-  # blacklisted_registers:
-  #   - 0x3333
+  - "2596:input"
+  - "2612:input"
+  - "2628:input"
+  - "5740:input"
+  - "5741:input"
+  - "5742:input"
+  - "5743:input"
+  - "5744:input"
+  - "5745:input"
