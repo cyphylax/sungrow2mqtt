@@ -5,6 +5,10 @@
 ## Changelog
 
 ### [Unreleased]
+#### Added
+- **Model-specific register blacklist**: `rootfs/app/config/model_blacklist.yaml` lists registers that a given model cannot read (`"<address>:<input|holding>"` per model name as logged at startup). After the inverter is identified, a model with an entry there skips exactly those registers, whether `winet_connection` is set or not, and the generic WiNET-S blacklist is no longer used for it; models without an entry keep the previous behaviour. The first entry is `SH15T` (tested behind WiNET-S firmware WINET-SV300.001.03.P033): firmware version registers 2596, 2612 and 2628 and meter registers 5740-5745 (input) are skipped instead of failing on every poll cycle, and the holding registers 13057, 13058, 13073, 13099, 33046 and 33047, which the generic WiNET-S list blocked but the SH15T can read, are polled again. Refs [#40](https://github.com/cyphylax/sungrow2mqtt/issues/40), [#41](https://github.com/cyphylax/sungrow2mqtt/issues/41), [#42](https://github.com/cyphylax/sungrow2mqtt/issues/42).
+#### Changed
+- **WiNET-S blacklist parsing**: the generic `blacklist` file is parsed line by line; blank lines, extra spaces and duplicate lines no longer matter.
 
 ### [1.3.0] - 2026-10-31
 #### Added
