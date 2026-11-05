@@ -5,6 +5,7 @@ import ast
 import jinja2
 from jinja2.sandbox import SandboxedEnvironment
 import time
+import yaml
 from datetime import datetime
 from typing import Any, Optional
 from pymodbus.client.sync import ModbusTcpClient
@@ -17,7 +18,79 @@ SERIAL_READ_RETRY_DELAY = 10  # seconds
 # fails (e.g. not supported by the model) never makes it unreachable on its own,
 # because the other blocks keep succeeding.
 UNREACHABLE_AFTER_SECONDS = 60
+# Generic WiNET-S blacklist (one `address, type` pair per line), applied when
+# winet_connection is set and the model has no entry in MODEL_BLACKLIST_PATH.
+BLACKLIST_PATH = "/app/config/blacklist"
+# Model-specific blacklist (see the header of that file). Module constants so
+# tests can point them at other files.
+MODEL_BLACKLIST_PATH = "/app/config/model_blacklist.yaml"
+MODEL_BLACKLIST_ENTRY = re.compile(r'^\d+:(input|holding)$')
 log = logging.getLogger(__name__)
+
+
+def load_generic_blacklist(path: Optional[str] = None) -> set:
+    """Parses the generic WiNET-S blacklist into a set of (address_str, type)
+    pairs. Blank lines and `#` comments are ignored, duplicates collapse."""
+    path = path or BLACKLIST_PATH
+    excluded = set()
+    try:
+        with open(path, "r") as f:
+            for lineno, raw in enumerate(f, 1):
+                line = raw.strip()
+                if not line or line.startswith('#'):
+                    continue
+                parts = [p.strip() for p in line.split(',')]
+                if len(parts) != 2 or not parts[0].isdigit() or not parts[1]:
+                    log.warning(f"Blacklist line {lineno} ignored, expected '<address>, <input|holding>': {line!r}")
+                    continue
+                excluded.add((str(int(parts[0])), parts[1].lower()))
+    except FileNotFoundError:
+        log.warning("Blacklist file not found.")
+    except Exception as e:
+        log.error(f"Error loading blacklist: {e}")
+    return excluded
+
+
+def load_model_blacklist(path: Optional[str] = None) -> dict:
+    """Loads the model-specific blacklist as {model_name: set of (address_str, type)}.
+    A missing or unparsable file is treated as empty; invalid entries are skipped
+    with a warning. A model without a list (`SH15T:` alone) maps to an empty set."""
+    path = path or MODEL_BLACKLIST_PATH
+    try:
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+    except FileNotFoundError:
+        log.warning(f"Model blacklist file not found ({path}); no model-specific blacklist used.")
+        return {}
+    except (OSError, yaml.YAMLError) as e:
+        log.warning(f"Error loading model blacklist {path}: {e}; no model-specific blacklist used.")
+        return {}
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        log.warning(f"Model blacklist {path} must map model names to lists; ignored.")
+        return {}
+
+    result = {}
+    for model, entries in data.items():
+        model = str(model).strip()
+        if entries is None:
+            entries = []
+        if not isinstance(entries, list):
+            log.warning(f"Model blacklist: value for {model} is not a list; entry ignored.")
+            continue
+        excluded = set()
+        for entry in entries:
+            text = str(entry).strip()
+            if not MODEL_BLACKLIST_ENTRY.match(text):
+                log.warning(f"Model blacklist: invalid entry {entry!r} for {model} skipped (expected '<address>:<input|holding>').")
+                continue
+            addr, typ = text.split(':')
+            excluded.add((str(int(addr)), typ))
+        result[model] = excluded
+    return result
+
+
 class Client:
     def __init__(self, config: dict, inverter_config: Optional[dict] = None) -> None:
         # inverter_config: one entry of the inverter list (the `inverter` option or an
@@ -55,6 +128,8 @@ class Client:
         # same endpoint; then close() leaves it open for them.
         self._owns_client = True
         self._polling_prepared = False
+        # True while the address lookup is built from a model_blacklist.yaml entry.
+        self._model_blacklist_applied = False
         # Number of due blocks in the last poll_blocks() call, and how many failed.
         self.last_poll_due = 0
         self.last_poll_failed = 0
@@ -154,23 +229,45 @@ class Client:
         self.identify(serial_attempts)
 
     def prepare_polling(self) -> None:
-        """Builds the address lookup and read blocks. Runs once per inverter."""
+        """Builds the address lookup and read blocks. Runs once per inverter.
+        The model is not known yet here, so the generic WiNET-S blacklist is used
+        (if winet_connection is set); apply_model_blacklist() refines this after
+        identify()."""
         if self._polling_prepared:
             return
-        blacklist = {}
-        if self.client_config['winet_connection']:
-            log.info("WiNET-S connection selected, cleanup address lookup to use with WiNET-S.")
-            try:
-                with open("/app/config/blacklist", "r") as f:
-                    b = f.read().replace(' ', '').replace('\n', ',').split(',')
-                blacklist = {b[i]: b[i + 1] for i in range(0, len(b), 2)}
-            except FileNotFoundError:
-                log.warning("Blacklist file not found.")
-            except Exception as e:
-                log.error(f"Error loading blacklist: {e}")
+        self._rebuild_polling(self._default_exclusions())
+        self._polling_prepared = True
 
-        # Build address lookup table
-        blacklisted_count = 0
+    def _default_exclusions(self) -> set:
+        """Exclusions without a model entry: the generic WiNET-S list when
+        winet_connection is set, nothing otherwise."""
+        if not self.client_config['winet_connection']:
+            return set()
+        log.info("WiNET-S connection selected, cleanup address lookup to use with WiNET-S.")
+        return load_generic_blacklist()
+
+    def _rebuild_polling(self, excluded: set, model_entry: bool = False) -> None:
+        """(Re)builds address lookup and read blocks without `excluded`, logs the
+        result and the poll plan."""
+        excluded_count = self._build_address_lookup(excluded)
+        if model_entry:
+            log.info(
+                f"[{self.label}] Model blacklist for {self.model}: {excluded_count} register(s) "
+                "excluded from polling (generic WiNET-S blacklist not used)."
+            )
+        elif excluded_count:
+            log.info(f"WiNET-S blacklist: {excluded_count} register(s) excluded from polling.")
+        self._build_read_blocks()
+        self._log_polling_plan()
+
+    def _build_address_lookup(self, excluded: set) -> int:
+        """Rebuilds address_lookup and name_to_uid from self.registers, skipping
+        registers whose (str(address), input_type) is in `excluded`. The register
+        dicts themselves are reused (they carry runtime state). Returns the number
+        of excluded registers."""
+        address_lookup = {}
+        name_to_uid = {}
+        excluded_count = 0
         try:
             for category in self.registers.values():
                 if isinstance(category, list):
@@ -179,25 +276,41 @@ class Client:
                         name = reg.get('name')
                         uid = reg.get('unique_id')
                         if name and uid:
-                            self.name_to_uid[name.lower().replace(' ', '_')] = uid
+                            name_to_uid[name.lower().replace(' ', '_')] = uid
 
                         addr = reg.get('address')
                         typ = reg.get('input_type')
                         if addr is not None and typ is not None:
-                            if self.client_config['winet_connection'] and blacklist:
-                                if str(addr) in blacklist and blacklist[str(addr)] == typ:
-                                    blacklisted_count += 1
-                                    continue
-                            self.address_lookup.setdefault((addr, typ), []).append(reg)
+                            if (str(addr), typ) in excluded:
+                                excluded_count += 1
+                                continue
+                            address_lookup.setdefault((addr, typ), []).append(reg)
         except Exception as e:
             log.error(f"Error building address lookup: {e}")
             raise
-        if blacklisted_count:
-            log.info(f"WiNET-S blacklist: {blacklisted_count} register(s) excluded from polling.")
+        self.address_lookup = address_lookup
+        self.name_to_uid = name_to_uid
+        return excluded_count
 
-        self._build_read_blocks()
-        self._log_polling_plan()
-        self._polling_prepared = True
+    def apply_model_blacklist(self) -> bool:
+        """Applies model_blacklist.yaml for the identified model. If the model has
+        an entry, only that list is excluded from polling (regardless of
+        winet_connection) and the generic WiNET-S list is not used. Without an
+        entry, the polling plan from prepare_polling() stays. Idempotent; returns
+        True if the polling plan was rebuilt."""
+        if not self.model:
+            return False
+        excluded = load_model_blacklist().get(self.model)
+        if excluded is None:
+            if self._model_blacklist_applied:
+                # A model list was applied before (model changed): back to default.
+                self._model_blacklist_applied = False
+                self._rebuild_polling(self._default_exclusions())
+                return True
+            return False
+        self._rebuild_polling(excluded, model_entry=True)
+        self._model_blacklist_applied = True
+        return True
 
     def create_modbus_client(self) -> Any:
         """Creates (not connects) the Modbus TCP client for this inverter's endpoint."""
@@ -260,6 +373,7 @@ class Client:
                 "not publishing to MQTT without it. Check the Modbus connection to the inverter."
             )
         log.info(f'Inverter configured successfully. Model: {self.model}, Serial Number: {self.serial_number}')
+        self.apply_model_blacklist()
 
     def _log_polling_plan(self) -> None:
         """
