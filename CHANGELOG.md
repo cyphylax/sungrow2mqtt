@@ -4,6 +4,8 @@
 
 ## Changelog
 
+### [Unreleased]
+
 ### [1.3.0] - 2026-10-31
 #### Added
 - **Multiple inverters**: the new `additional_inverters` option lists further inverters (`host`, optional `port`, `slave`, `winet_connection`, `name`). Each one is published under its own `Sungrow/<serial>` topics and gets its own Home Assistant device; `name` sets the device name. Inverters behind the same Modbus endpoint (`host`, `port`), e.g. a data logger addressing several inverters by slave ID, share one Modbus connection and are polled in turn; different endpoints are polled in parallel threads. All inverters share one MQTT connection. Inverters unreachable at startup are retried in the background; a serial number that is already in use is rejected. Existing configurations need no change, and the first inverter keeps its topics and entity IDs.
