@@ -39,6 +39,8 @@ Configuration is done via the "Configuration" tab in the add-on.
 | `slave` | Slave/unit ID of your inverter. | `1` |
 | `winet_connection` | Ignore any registers that are not usable with the WiNET-S/WiNET-S2 module. | `false` |
 
+**Model-specific register blacklist**: some models do not answer certain registers, which then fail on every poll cycle. `rootfs/app/config/model_blacklist.yaml` lists such registers per model (key: the model name as logged at startup, `Model: ...`; entries: `"<address>:<input|holding>"`). Once the inverter is identified and its model has an entry there, exactly those registers are skipped, whether `winet_connection` is set or not, and the generic WiNET-S blacklist is not used for that model. Models without an entry behave as before: with `winet_connection: true` the generic WiNET-S blacklist applies, otherwise nothing is skipped. Currently listed: `SH15T`. If your model logs read errors for the same registers on every cycle (or registers it can read are skipped), please [open an issue](https://github.com/cyphylax/sungrow2mqtt/issues) with the model name from the startup log, the WiNet-S firmware version if any, and the affected addresses and register types.
+
 **Additional inverters** (optional)
 
 `additional_inverters` is a list; each entry describes one more inverter with the same keys as `inverter`, plus an optional `name`. Leave it empty (`[]`) for a single inverter; existing configurations keep working unchanged.

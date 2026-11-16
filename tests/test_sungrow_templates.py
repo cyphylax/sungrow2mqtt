@@ -121,3 +121,21 @@ def test_modbus_backed_entries_are_skipped(build_inverter):
     }
     inv.update_templates(ha_sensors)
     assert "raw" not in inv.last_scrape
+
+
+def test_find_state_tells_never_read_from_stored_values(build_inverter):
+    """find_state() is the lookup behind states(); with default=None a value
+    that was never read can be told apart from a real 0. states() itself keeps
+    returning 0 for never-read values and the stored None for NaN readings."""
+    inv = build_inverter()
+    inv.last_scrape = {"export_power_limit_max": 0, "bdc_rated_power": None, "limit_uid": 2500}
+    inv.name_to_uid = {"some_limit": "limit_uid"}
+
+    assert inv.find_state("sensor.export_power_limit_max", default=None) == 0
+    assert inv.find_state("sensor.sg_export_power_limit_max", default=None) == 0
+    assert inv.find_state("sensor.some_limit", default=None) == 2500
+    assert inv.find_state("sensor.never_read", default=None) is None
+
+    states = inv.jinja_env.globals["states"]
+    assert states("sensor.never_read") == 0
+    assert states("sensor.bdc_rated_power") is None
