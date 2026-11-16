@@ -11,6 +11,13 @@ log = logging.getLogger(__name__)
 # template, e.g. for export_power_limit. Home Assistant expects a number there.
 STATES_TEMPLATE = re.compile(r"^\s*\{\{\s*states\(\s*['\"]([^'\"]+)['\"]\s*\)\s*\}\}\s*$")
 
+# Fallback for a template max without a usable value: entity unique_id ->
+# scraped unique_id whose value is used instead (e.g. export_power_limit_max
+# reads 0 on some models, while HA's default max of 100 would reject real W values).
+TEMPLATE_MAX_FALLBACK = {
+    "export_power_limit": "inverter_rated_output",
+}
+
 
 def _is_number(value: Any) -> bool:
     """True for a finite int/float (bool excluded)."""
@@ -298,22 +305,36 @@ class Client(object):
         """Replaces template min/max in a discovery message by their current
         values. A template without a usable value (min: any number, max: a
         positive number not below min) is left out, since Home Assistant
-        rejects the whole entity for template text there ("expected float")."""
+        rejects the whole entity for template text there ("expected float").
+        For max, TEMPLATE_MAX_FALLBACK is tried before leaving it out."""
         for key in ('min', 'max'):
             raw = config_msg.get(key)
             if not _is_template(raw):
                 continue
             value = self._resolve_limit(inverter, raw)
-            if key == 'max' and value is not None:
-                min_val = config_msg.get('min')
-                if value <= 0 or (_is_number(min_val) and value < min_val):
-                    value = None
+            if key == 'max':
+                value = self._usable_max(value, config_msg.get('min'))
+                fallback_uid = TEMPLATE_MAX_FALLBACK.get(uid)
+                if value is None and fallback_uid:
+                    fallback = self._usable_max(inverter.last_scrape.get(fallback_uid), config_msg.get('min'))
+                    if fallback is not None:
+                        config_msg[key] = fallback
+                        self._log_once(logging.INFO, f"template_limit_fallback:{uid}:{key}",
+                                       f"MQTT: No valid value for {key} of {uid} ({raw}), using {fallback_uid}={fallback} instead")
+                        continue
             if value is None:
                 del config_msg[key]
                 self._log_once(logging.INFO, f"template_limit_omitted:{uid}:{key}",
                                f"MQTT: No valid value for {key} of {uid} ({raw}), leaving {key} out of its discovery config")
             else:
                 config_msg[key] = value
+
+    @staticmethod
+    def _usable_max(value: Any, min_val: Any) -> Any:
+        """`value` if it is a positive number not below `min_val`, else None."""
+        if not _is_number(value) or value <= 0 or (_is_number(min_val) and value < min_val):
+            return None
+        return value
 
     def handle_writes(self, inverter: Any) -> None:
         """
