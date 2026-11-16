@@ -1,9 +1,25 @@
 import logging
 import json
+import math
+import re
 from typing import Any, Optional
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 log = logging.getLogger(__name__)
+
+# A min/max given in the register file as a plain `{{ states('sensor.xxx') }}`
+# template, e.g. for export_power_limit. Home Assistant expects a number there.
+STATES_TEMPLATE = re.compile(r"^\s*\{\{\s*states\(\s*['\"]([^'\"]+)['\"]\s*\)\s*\}\}\s*$")
+
+
+def _is_number(value: Any) -> bool:
+    """True for a finite int/float (bool excluded)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _is_template(value: Any) -> bool:
+    return isinstance(value, str) and '{{' in value
+
 
 class Client(object):
     def __init__(self) -> None:
@@ -18,6 +34,8 @@ class Client(object):
         # Last value actually published per unique_id, so publish() can skip
         # republishing topics whose value hasn't changed since last cycle.
         self._last_published = {}
+        # Keys of messages already logged by _log_once().
+        self._logged_once = set()
         # Exclude ones linked to register lookups; unit_of_measurement
         # The inverter this client publishes for; its ha_sensors hold the HA entities.
         self.inverter = None
@@ -141,6 +159,16 @@ class Client(object):
 
                     # Base topics
                     sensor_uid = ha_sensor.get('unique_id')
+
+                    if sensor_type == 'switch' and (ha_sensor.get('command_on') is None or ha_sensor.get('command_off') is None):
+                        # E.g. template switches of the HA package (sungrow_dashboard_enable_danger_mode):
+                        # without payloads Home Assistant rejects the config ("string value is None at 'payload_on'").
+                        self._log_once(logging.INFO, f"switch_without_commands:{sensor_uid}",
+                                       f"MQTT: Not publishing discovery for switch {sensor_uid}: it has no command_on/command_off")
+                        # Clear a config retained by an earlier version, so Home Assistant stops reporting it.
+                        stale_topic = f"homeassistant/{sensor_type}/{self.serial_number}/{sensor_uid}/config"
+                        self.mqtt_queue.append(self.mqtt_client.publish(stale_topic, "", retain=True, qos=1).mid)
+                        continue
                     config_msg['unique_id'] = f"{self.serial_number}_{sensor_type}_{ha_sensor.get('unique_id')}"
                     config_msg['availability_topic'] = self.config['topic']
                     config_msg['state_topic'] = f"{self.config['topic']}/{sensor_uid}"
@@ -183,6 +211,9 @@ class Client(object):
                         if ha_sensor.get(ha_variable) is not None:
                             config_msg[ha_variable] = ha_sensor[ha_variable]
 
+                    # HA needs numbers for min/max: resolve templates, else leave them out
+                    self._apply_template_limits(inverter, sensor_uid, config_msg)
+
                     # Set unique_id, include Serial so it is truly unique in HA
                     config_msg['device'] = ha_device
 
@@ -222,12 +253,67 @@ class Client(object):
         for sensor_type, sensors in inverter.ha_sensors.items():
             for ha_sensor in sensors:
                 uid = ha_sensor.get('unique_id')
-                if uid in dynamic_map:
-                    limit_uid = dynamic_map[uid]
-                    limit_val = inverter.last_scrape.get(limit_uid)
-                    if limit_val is not None and isinstance(limit_val, (int, float)):
-                        ha_sensor['max'] = limit_val
-                        log.info(f"MQTT: Dynamically set max for {uid} to {limit_val}W based on {limit_uid}")
+                if uid not in dynamic_map:
+                    continue
+                limit_uid = dynamic_map[uid]
+                limit_val = inverter.last_scrape.get(limit_uid)
+                configured_max = ha_sensor.get('max')
+                # 0, None (NaN / not read) or non-numeric: keep the max from the register file / config.
+                if not _is_number(limit_val) or limit_val <= 0:
+                    self._log_once(logging.INFO, f"dynamic_limit_invalid:{uid}",
+                                   f"MQTT: Not using {limit_uid}={limit_val!r} as max for {uid} (not a positive number), "
+                                   f"keeping the configured max {configured_max!r}")
+                    continue
+                min_val = self._resolve_limit(inverter, ha_sensor.get('min'))
+                if _is_number(min_val) and limit_val < min_val:
+                    self._log_once(logging.WARNING, f"dynamic_limit_below_min:{uid}",
+                                   f"MQTT: {limit_uid}={limit_val}W is below the min {min_val} of {uid}, "
+                                   f"keeping the configured max {configured_max!r}")
+                    continue
+                ha_sensor['max'] = limit_val
+                log.info(f"MQTT: Dynamically set max for {uid} to {limit_val}W based on {limit_uid}")
+
+    def _log_once(self, level: int, key: str, message: str) -> None:
+        """Logs `message` only the first time `key` is seen by this publisher."""
+        if key in self._logged_once:
+            return
+        self._logged_once.add(key)
+        log.log(level, message)
+
+    def _resolve_limit(self, inverter: Any, value: Any) -> Any:
+        """Returns an entity's min/max as a number: non-template values as they
+        are, a `{{ states('sensor.xxx') }}` template resolved from the scraped
+        values. None if a template has no numeric value (not read yet, NaN) or
+        is not of that simple form."""
+        if not _is_template(value):
+            return value
+        match = STATES_TEMPLATE.match(value)
+        find_state = getattr(inverter, 'find_state', None)
+        if not match or find_state is None:
+            return None
+        resolved = find_state(match.group(1), default=None)
+        return resolved if _is_number(resolved) else None
+
+    def _apply_template_limits(self, inverter: Any, uid: str, config_msg: dict) -> None:
+        """Replaces template min/max in a discovery message by their current
+        values. A template without a usable value (min: any number, max: a
+        positive number not below min) is left out, since Home Assistant
+        rejects the whole entity for template text there ("expected float")."""
+        for key in ('min', 'max'):
+            raw = config_msg.get(key)
+            if not _is_template(raw):
+                continue
+            value = self._resolve_limit(inverter, raw)
+            if key == 'max' and value is not None:
+                min_val = config_msg.get('min')
+                if value <= 0 or (_is_number(min_val) and value < min_val):
+                    value = None
+            if value is None:
+                del config_msg[key]
+                self._log_once(logging.INFO, f"template_limit_omitted:{uid}:{key}",
+                               f"MQTT: No valid value for {key} of {uid} ({raw}), leaving {key} out of its discovery config")
+            else:
+                config_msg[key] = value
 
     def handle_writes(self, inverter: Any) -> None:
         """
