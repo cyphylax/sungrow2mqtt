@@ -155,30 +155,36 @@ class Client:
         
         log.debug('Inverter configuration loaded')
 
+    def find_state(self, entity_id: str, default: Any = 0) -> Any:
+        """Looks up the last scraped value for an HA entity id such as
+        'sensor.export_power_limit_max'. Returns the stored value (which can be
+        None for a NaN reading) or `default` if the entity was never read."""
+        # 1. Normalize ID: 'sensor.sg_abc' -> 'abc'
+        clean_id = entity_id.split('.')[-1].lower()
+        for p in ['sg_', 'uid_sg_', 'uid_']:
+            if clean_id.startswith(p):
+                clean_id = clean_id[len(p):]
+                break
+
+        # 2. Direct lookup in last_scrape
+        if clean_id in self.last_scrape:
+            return self.last_scrape[clean_id]
+
+        # 3. Lookup via Name-Mapping
+        uid = self.name_to_uid.get(clean_id)
+        if uid and uid in self.last_scrape:
+            return self.last_scrape[uid]
+
+        for p in ['sg_', 'uid_', 'uid_sg_']:
+            if f"{p}{clean_id}" in self.last_scrape:
+                return self.last_scrape[f"{p}{clean_id}"]
+
+        return default
+
     def _setup_jinja_env(self):
         """Configures Jinja2 with HA-like filters and functions."""
         def states(entity_id):
-            # 1. Normalize ID: 'sensor.sg_abc' -> 'abc'
-            clean_id = entity_id.split('.')[-1].lower()
-            for p in ['sg_', 'uid_sg_', 'uid_']:
-                if clean_id.startswith(p):
-                    clean_id = clean_id[len(p):]
-                    break
-            
-            # 2. Direct lookup in last_scrape
-            if clean_id in self.last_scrape:
-                return self.last_scrape[clean_id]
-            
-            # 3. Lookup via Name-Mapping
-            uid = self.name_to_uid.get(clean_id)
-            if uid and uid in self.last_scrape:
-                return self.last_scrape[uid]
-                
-            for p in ['sg_', 'uid_', 'uid_sg_']:
-                if f"{p}{clean_id}" in self.last_scrape:
-                    return self.last_scrape[f"{p}{clean_id}"]
-            
-            return 0
+            return self.find_state(entity_id)
 
         def bitwise_and(value, mask):
             try:
