@@ -4,4 +4,4 @@
 # from rootfs/app/requirements.txt here too, opening duplicate PRs. Install
 # both files explicitly instead - see README.md's Development section.
 pytest==9.2.0
-ruff==0.17.3
+ruff==0.17.5
